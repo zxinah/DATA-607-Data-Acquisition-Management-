@@ -1,0 +1,19 @@
+---
+title: "ELO Calculations"
+author: |
+  Zaina Hassan  
+  [GitHub Repository](https://github.com/zxinah/DATA-607---Data-Acquisition-Management-)
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Approach
+
+For this assignment, I will use the chess tournament data from Project 1 to compare each player’s actual tournament performance with their expected performance based on the Elo rating system. The dataset already contains each player’s pre-tournament rating, actual total points, and the opponents they faced during the tournament.
+
+I will use an [Elo expected-score formula](https://www.geeksforgeeks.org/dsa/elo-rating-algorithm/) to calculate the expected result of each individual matchup based on the difference between the player’s pre-tournament rating and their opponent’s pre-tournament rating. Each player’s expected scores from their individual games will then be added together to calculate their total expected tournament score.
+
+Next, I will compare each player’s expected score with their actual total points by calculating the difference between the two. A positive difference will indicate that a player scored more points than expected, while a negative difference will indicate that a player scored fewer points than expected. Finally, I will sort these differences to identify the five players who most overperformed and the five players who most underperformed relative to their expected scores.
+
+One anticipated complication is handling rounds in which a player did not face an opponent, such as byes or unplayed rounds. These rounds will need to be excluded from the Elo matchup calculations so that expected scores are based only on games against actual opponents. Another consideration is ensuring that every opponent number is correctly matched to that opponent’s pre-tournament rating before calculating the expected scores.
