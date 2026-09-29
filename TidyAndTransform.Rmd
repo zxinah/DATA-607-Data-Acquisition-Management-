@@ -1,0 +1,15 @@
+---
+title: "Tidy And Transform"
+author: |
+  Zaina Hassan  
+  [GitHub Repository](https://github.com/zxinah/DATA-607---Data-Acquisition-Management-)
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Approch 
+
+For this assignment, I will recreate the provided airline arrival data in a CSV file using a wide format similar to the original table. The dataset contains the number of on-time and delayed flights for Alaska Airlines and AM West across five destinations: Los Angeles, Phoenix, San Diego, San Francisco, and Seattle. I will upload the CSV file to my GitHub repository and import the data into R. The assignment specifically asks for the original information to be recreated and then tidied and transformed using tidyr and dplyr. 
+After importing the data, I will check for missing values and make any necessary adjustments before transforming the dataset from wide to long format. I will then calculate the percentage of delayed flights for each airline overall and compare their performance. Next, I will calculate the delay percentages for each airline across each of the five destinations to determine whether the city-level results differ from the overall results. Finally, I will compare these findings and discuss why the overall performance of the airlines may give a different impression than their performance when each destination is examined separately.
+One complication I anticipate is handling the structure of the original dataset, including any missing values or empty cells, while making sure they are represented correctly when the data is imported into R. I will also need to carefully transform the five destination columns from wide to long format without losing the airline or arrival status information. Another potential complication is that the two airlines have different numbers of flights across each destination, so comparing only the number of delayed flights could be misleading. To account for this, I will compare percentages rather than relying only on raw counts.
