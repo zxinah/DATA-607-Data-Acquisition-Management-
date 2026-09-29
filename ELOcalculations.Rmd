@@ -4,8 +4,8 @@ author: |
   Zaina Hassan  
   [GitHub Repository](https://github.com/zxinah/DATA-607---Data-Acquisition-Management-)
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 # Approach
@@ -17,3 +17,171 @@ I will use an [Elo expected-score formula](https://www.geeksforgeeks.org/dsa/elo
 Next, I will compare each player’s expected score with their actual total points by calculating the difference between the two. A positive difference will indicate that a player scored more points than expected, while a negative difference will indicate that a player scored fewer points than expected. Finally, I will sort these differences to identify the five players who most overperformed and the five players who most underperformed relative to their expected scores.
 
 One anticipated complication is handling rounds in which a player did not face an opponent, such as byes or unplayed rounds. These rounds will need to be excluded from the Elo matchup calculations so that expected scores are based only on games against actual opponents. Another consideration is ensuring that every opponent number is correctly matched to that opponent’s pre-tournament rating before calculating the expected scores.
+
+# Code Base
+
+## Import and Prepare the Tournament Data
+
+For this assignment, I will use the same tournament text file from Project 1. The following code extracts each player's name, total points, pre-tournament rating, and opponent numbers from the original tournament data.
+```{r}
+chess_raw <- readLines("tournamentinfo.txt")
+
+# Extract player and rating records
+player_lines <- chess_raw[seq(5, length(chess_raw), by = 3)]
+rating_lines <- chess_raw[seq(6, length(chess_raw), by = 3)]
+
+# Extract player names and total points
+player_split <- strsplit(player_lines, "\\|")
+player_name <- trimws(sapply(player_split, `[`, 2))
+total_points <- as.numeric(trimws(sapply(player_split, `[`, 3)))
+
+# Extract states and pre-tournament ratings
+rating_split <- strsplit(rating_lines, "\\|")
+player_state <- trimws(sapply(rating_split, `[`, 1))
+rating_text <- sapply(rating_split, `[`, 2)
+
+pre_rating <- as.numeric(
+  sub(".*R:\\s*([0-9]+).*", "\\1", rating_text)
+)
+
+# Create player data frame
+players <- data.frame(
+  player_number = 1:length(player_name),
+  player_name = player_name,
+  state = player_state,
+  total_points = total_points,
+  pre_rating = pre_rating
+)
+
+head(players)
+```
+
+
+## Extract Opponent Numbers
+
+Next, I will extract the opponent numbers from each player's seven tournament rounds. Rounds that do not contain an opponent number will be stored as NA
+```{r}
+# Extract the seven tournament rounds
+rounds <- t(sapply(player_split, function(x) x[4:10]))
+
+# Keep only opponent numbers
+opponents <- apply(rounds, c(1, 2), function(x) {
+  number <- gsub("[^0-9]", "", x)
+  ifelse(number == "", NA, as.numeric(number))
+})
+
+head(opponents)
+```
+
+## Calculate Expected Scores
+
+I will calculate the expected score for every game based on the difference between the player's rating and their opponent's rating.
+
+```{r}
+# Create a matrix to store expected scores
+expected_scores <- matrix(
+  NA,
+  nrow = nrow(opponents),
+  ncol = ncol(opponents)
+)
+
+# Calculate expected score for each matchup
+for (i in 1:nrow(opponents)) {
+  for (j in 1:ncol(opponents)) {
+    
+    opponent_number <- opponents[i, j]
+    
+    if (!is.na(opponent_number)) {
+      
+      player_rating <- players$pre_rating[i]
+      opponent_rating <- players$pre_rating[opponent_number]
+      
+      expected_scores[i, j] <- 1 / (
+        1 + 10^((opponent_rating - player_rating) / 400)
+      )
+    }
+  }
+}
+
+head(expected_scores)
+```
+
+## Calculate Total Expected Score
+
+```{r}
+expected_total <- rowSums(
+  expected_scores,
+  na.rm = TRUE
+)
+
+head(expected_total)
+```
+
+## Compare Expected and Actual Scores
+
+```{r}
+performance <- data.frame(
+  Player_Name = players$player_name,
+  Pre_Rating = players$pre_rating,
+  Actual_Score = players$total_points,
+  Expected_Score = expected_total
+)
+
+performance$Difference <- 
+  performance$Actual_Score - performance$Expected_Score
+
+# Round values for easier interpretation
+performance$Expected_Score <- round(
+  performance$Expected_Score, 2
+)
+
+performance$Difference <- round(
+  performance$Difference, 2
+)
+
+head(performance)
+```
+
+## Underpreformers 
+
+```{r}
+underperformed <- performance[
+  order(performance$Difference),
+]
+
+top_5_underperformed <- head(underperformed, 5)
+
+top_5_underperformed
+```
+
+## Overpreformers 
+
+```{r}
+overperformed <- performance[
+  order(performance$Difference, decreasing = TRUE),
+]
+
+top_5_overperformed <- head(overperformed, 5)
+
+top_5_overperformed
+```
+
+```{r}
+# Check that all 64 players received an expected score
+nrow(performance)
+sum(is.na(performance$Expected_Score))
+```
+
+# Results
+
+Using the Elo expected score formula, I calculated an expected score for each individual matchup based on the difference between the player's pre-tournament rating and their opponent's pre-tournament rating. These individual expected scores were then added together to determine each player's total expected tournament score.
+
+The five players who most overperformed were Aditya Bajaj, Zachary James Houghton, Anvit Rao, Jacob Alexander Lavalley, and Amiyatosh Pwnanandam. Aditya Bajaj had the largest positive difference, earning 6.0 actual points compared with an expected score of 1.95, resulting in a difference of +4.05 points.
+
+The five players who most underperformed were Loren Schwiebert, George Avery Jones, Jared Ge, Rishi Shetty, and Joshua David Lee. Loren Schwiebert had the largest negative difference, earning 3.5 actual points compared with an expected score of 6.28, resulting in a difference of -2.78 points.
+
+# Conclusion
+
+The results demonstrate how Elo ratings can be used to estimate a player's expected performance based on the ratings of the opponents they faced. By comparing each player's actual tournament score with their expected score, I was able to identify players whose performance was substantially above or below expectations.
+
+The analysis showed that pre-tournament rating differences can provide an expected score for each matchup, while the difference between expected and actual scores provides a simple way to evaluate tournament performance relative to those expectations.
