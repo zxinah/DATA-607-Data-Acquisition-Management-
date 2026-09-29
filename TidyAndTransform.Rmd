@@ -1,15 +1,232 @@
 ---
-title: "Tidy And Transform"
+title: "Airline Delays"
 author: |
   Zaina Hassan  
-  [GitHub Repository](https://github.com/zxinah/DATA-607---Data-Acquisition-Management-)
+  [GitHub Repository](https://github.com/zxinah/DATA-607-Data-Acquisition-Management-)
 output:
   pdf_document: default
   html_document: default
 ---
 
-# Approch 
+# Approach 
 
 For this assignment, I will recreate the provided airline arrival data in a CSV file using a wide format similar to the original table. The dataset contains the number of on-time and delayed flights for Alaska Airlines and AM West across five destinations: Los Angeles, Phoenix, San Diego, San Francisco, and Seattle. I will upload the CSV file to my GitHub repository and import the data into R. The assignment specifically asks for the original information to be recreated and then tidied and transformed using tidyr and dplyr. 
 After importing the data, I will check for missing values and make any necessary adjustments before transforming the dataset from wide to long format. I will then calculate the percentage of delayed flights for each airline overall and compare their performance. Next, I will calculate the delay percentages for each airline across each of the five destinations to determine whether the city-level results differ from the overall results. Finally, I will compare these findings and discuss why the overall performance of the airlines may give a different impression than their performance when each destination is examined separately.
 One complication I anticipate is handling the structure of the original dataset, including any missing values or empty cells, while making sure they are represented correctly when the data is imported into R. I will also need to carefully transform the five destination columns from wide to long format without losing the airline or arrival status information. Another potential complication is that the two airlines have different numbers of flights across each destination, so comparing only the number of delayed flights could be misleading. To account for this, I will compare percentages rather than relying only on raw counts.
+
+# Code
+
+1. Load the Data
+```{r}
+# Load packages
+library(tidyverse)
+
+airline_data <- read.csv(
+  "https://raw.githubusercontent.com/zxinah/DATA-607-Data-Acquisition-Management-/refs/heads/main/airlinedelays.csv",
+  check.names = FALSE
+)
+
+# View the original wide-format data
+airline_data
+
+# Examine the structure
+str(airline_data)
+
+```
+
+2. Check for Missing Values
+```{r}
+# Check for Blank/Missing Values
+colSums(is.na(airline_data))
+
+# Display rows containing any missing values
+airline_data[!complete.cases(airline_data), ]
+```
+The blank airline cells are initially imported as empty strings rather than NA values, so I will convert the empty strings to NA before filling the missing airline names.
+ 
+ 3. Populate Missing Data
+```{r}
+# Convert blank airline cells to NA
+airline_data$airline[airline_data$airline == ""] <- NA
+
+# Fill missing airline names with the value above
+airline_data <- airline_data %>%
+  fill(airline)
+
+# Check the cleaned data
+airline_data
+
+# Check again for missing values
+colSums(is.na(airline_data))
+```
+4. Transform Wide Data to Long Format
+```{r}
+airline_long <- airline_data %>%
+  pivot_longer(
+    cols = -c(airline, status),
+    names_to = "destination",
+    values_to = "flights"
+  )
+
+# View tidy data
+airline_long
+
+# Examine structure
+str(airline_long)
+```
+The original dataset stored each destination in a separate column. Using pivot_longer() transformed these columns into a single destination variable with the corresponding flight counts stored in the flights variable. This produces a tidy long format dataset that can be grouped and analyzed more easily.
+
+5. Overall Airline Performance
+```{r}
+overall_performance <- airline_long %>%
+  group_by(airline, status) %>%
+  summarise(
+    flights = sum(flights),
+    .groups = "drop"
+  ) %>%
+  group_by(airline) %>%
+  mutate(
+    total_flights = sum(flights),
+    percentage = flights / total_flights * 100
+  )
+
+overall_performance
+
+
+# Keep only delayed flights for comparison
+overall_delays <- overall_performance %>%
+  filter(status == "delayed") %>%
+  select(
+    airline,
+    delayed_flights = flights,
+    total_flights,
+    delay_percentage = percentage
+  )
+
+overall_delays
+
+```
+6. Overall Delay Percentage Chart
+```{r}
+ggplot(
+  overall_delays,
+  aes(
+    x = airline,
+    y = delay_percentage,
+    fill = airline
+  )
+) +
+  geom_col() +
+  labs(
+    title = "Overall Delay Percentage by Airline",
+    x = "Airline",
+    y = "Delayed Flights (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
+
+```
+The overall comparison shows that Alaska Airlines had a delay rate of approximately 13.3%, while AM West had a lower delay rate of approximately 10.9%. Based only on the overall percentages, AM West appears to have better arrival performance. However, because the two airlines operate different numbers of flights across the five destinations, the overall percentages may not fully represent their performance within each individual city.
+
+7. Performance by Destination
+```{r}
+city_performance <- airline_long %>%
+  group_by(
+    airline,
+    destination,
+    status
+  ) %>%
+  summarise(
+    flights = sum(flights),
+    .groups = "drop"
+  ) %>%
+  group_by(
+    airline,
+    destination
+  ) %>%
+  mutate(
+    total_flights = sum(flights),
+    percentage = flights / total_flights * 100
+  )
+
+city_performance
+
+# Keep delayed flights only
+city_delays <- city_performance %>%
+  filter(status == "delayed") %>%
+  select(
+    airline,
+    destination,
+    delayed_flights = flights,
+    total_flights,
+    delay_percentage = percentage
+  )
+
+city_delays
+
+```
+8. Compare Airlines Across Five Cities
+```{r}
+city_comparison <- city_delays %>%
+  select(
+    destination,
+    airline,
+    delay_percentage
+  ) %>%
+  pivot_wider(
+    names_from = airline,
+    values_from = delay_percentage
+  )
+city_comparison
+```
+9. City by City Delay Percentage Chart
+```{r}
+ggplot(
+  city_delays,
+  aes(
+    x = destination,
+    y = delay_percentage,
+    fill = airline
+  )
+) +
+  geom_col(
+    position = "dodge"
+  ) +
+  labs(
+    title = "Delay Percentage by Destination and Airline",
+    x = "Destination",
+    y = "Delayed Flights (%)",
+    fill = "Airline"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  )
+```
+The city-by-city comparison shows a different pattern from the overall results. Alaska had a lower delay percentage than AM West in all five destinations. In Los Angeles, Alaska's delay rate was approximately 11.1% compared with 14.4% for AM West. In Phoenix, the rates were 5.2% and 7.9%, respectively. Alaska also had lower delay rates in San Diego (8.6% vs. 14.5%), San Francisco (16.9% vs. 28.7%), and Seattle (14.2% vs. 23.3%). Therefore, when each destination is examined individually, Alaska consistently had the lower percentage of delayed flights.
+
+10. Final Comparison
+```{r}
+# Overall delay percentages
+overall_delays
+
+# Delay percentages for each destination
+city_comparison
+```
+
+
+# Results 
+
+The overall analysis showed that Alaska Airlines had 501 delayed flights out of 3,775 total flights, resulting in a delay rate of approximately 13.3%. AM West had 787 delayed flights out of 7,225 total flights, resulting in a lower overall delay rate of approximately 10.9%. Based on the overall percentages, AM West appears to have better arrival performance.
+However, the city by city comparison showed a different pattern. Alaska had a lower delay percentage than AM West in all five destinations. In Los Angeles, the delay rates were approximately 11.1% for Alaska and 14.4% for AM West. In Phoenix, they were 5.2% and 7.9%; in San Diego, 8.6% and 14.5%; in San Francisco, 16.9% and 28.7%; and in Seattle, 14.2% and 23.3%, respectively.
+Therefore, while AM West had the lower delay percentage overall, Alaska had the lower delay percentage in every individual destination.
+
+# Conclusion 
+
+The analysis demonstrates that comparing the airlines only by their overall delay percentages can give a different impression than comparing them within individual destinations. This discrepancy occurs because the airlines operated very different numbers of flights across the five cities. AM West operated a particularly large number of flights to Phoenix, where delay rates were relatively low, while a large proportion of Alaska's flights were to Seattle, where delay rates were higher.
+As a result, the distribution of flights across destinations influences the overall percentages. Although Alaska had a lower delay percentage in every individual city, AM West had the lower delay percentage when all destinations were combined. This is an example of Simpson's paradox, where a pattern observed within individual groups reverses when the groups are combined. The results demonstrate the importance of examining both aggregated and grouped data before drawing conclusions about performance.
