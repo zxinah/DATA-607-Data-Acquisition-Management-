@@ -16,4 +16,209 @@ execute:
 
 Dataset: [Kia and Hyundai Vehicle Theft](https://docs.google.com/spreadsheets/d/1-6614t_Ata5k7oESrm-HAdF1uOe8aPGRaQECl44GYeE/edit?gid=0#gid=0)
 
-For this dataset, I will use the Motherboard/VICE News dataset containing Kia and Hyundai vehicle theft statistics across multiple U.S. cities. This dataset has a particularly wide structure because individual cities are distributed across many columns, with repeated measurements for Kia/Hyundai thefts, total vehicle thefts, and the percentage represented by Kia and Hyundai vehicles. I will first preserve the original wide data before using tidyr and dplyr to reorganize it into a tidy long format. The transformation will restructure the repeated city and measurement columns so that observations are represented by variables such as date, city, theft_measure, and value. Where appropriate, I will further separate or transform variables so that Kia/Hyundai theft counts, total theft counts, and percentages can be analyzed consistently. I will also standardize variable names and document decisions concerning missing or inconsistent values. After tidying the dataset, I will analyze how Kia and Hyundai theft patterns changed over time and differed among cities. I plan to compare Kia/Hyundai thefts with overall vehicle thefts, examine changes in the percentage of vehicle thefts involving Kia and Hyundai vehicles, and identify cities with particularly large increases or high proportions. Time-series and comparative visualizations will be used to show how these patterns vary across locations and over time.
+For this dataset, I will use the Motherboard/VICE News dataset containing Kia and Hyundai vehicle theft statistics across multiple U.S. cities. This dataset has a particularly wide structure because individual cities are distributed across many columns, with repeated measurements for Kia/Hyundai thefts, total vehicle thefts, and the percentage represented by Kia and Hyundai vehicles. I will first preserve the original wide data before using tidyr and dplyr to reorganize it into a tidy long format. The transformation will restructure the repeated city and measurement columns so that observations are represented by variables such as date, city, theft measure, and value. Where appropriate, I will further separate or transform variables so that Kia/Hyundai theft counts, total theft counts, and percentages can be analyzed consistently. I will also standardize variable names and document decisions concerning missing or inconsistent values. After tidying the dataset, I will analyze how Kia and Hyundai theft patterns changed over time and differed among cities. I plan to compare Kia/Hyundai thefts with overall vehicle thefts, examine changes in the percentage of vehicle thefts involving Kia and Hyundai vehicles, and identify cities with particularly large increases or high proportions. Time series and comparative visualizations will be used to show how these patterns vary across locations and over time.
+
+## Data Source
+
+The data for this analysis comes from a dataset collected by Motherboard/Vice News examining vehicle thefts involving Kia and Hyundai vehicles across multiple U.S. cities. The original spreadsheet organizes cities horizontally, with repeated columns containing Kia/Hyundai thefts, total vehicle thefts, and percentages for each city across multiple reporting dates.
+
+The original data was preserved in its wide structure as `vehicle_theft_raw.csv` and committed to GitHub before any transformations were performed.
+
+## Load Packages and Import Raw Data
+```{r}
+library(tidyverse)
+
+vehicle_theft_raw <- read.csv(
+  "vehicle_theft_raw.csv",
+  header = FALSE,
+  check.names = FALSE
+)
+
+dim(vehicle_theft_raw)
+
+vehicle_theft_raw[1:6, 1:12]
+```
+
+```{r}
+dim(vehicle_theft_raw)
+vehicle_theft_raw[1:6, 1:12]
+```
+
+## Data Structure Before Tidying
+
+The raw dataset contains 47 rows and 211 columns and uses a complex wide structure with two header rows. The first header row identifies cities, while the second identifies repeated measurements within each city: Kia/Hyundai thefts, all vehicle thefts, and the percentage of thefts involving Kia/Hyundai vehicles. The first column contains the reporting date.
+
+As a result, both city and measurement information are encoded across columns rather than stored as individual variables. To create a tidy dataset, the two header rows must first be combined into meaningful variable names. The city groups can then be reshaped from wide to long format so that each row represents one date and city.
+
+## Transformation Steps
+
+The transformation begins by separating the two header rows from the observations. Because each city name appears only once for a three column group, the city names are filled across the corresponding Kia/Hyundai, all theft, and percentage columns.
+
+The city and measurement labels are then combined to create unique column names. After assigning these names to the observation rows, `pivot_longer()` is used to convert the city-specific columns from wide to long format. Finally, the measurement types are separated and reorganized into variables representing Kia/Hyundai thefts, all vehicle thefts, and percentage.
+
+
+## Combine Headers and Create Data
+```{r}
+city_headers <- as.character(vehicle_theft_raw[1, ])
+measure_headers <- as.character(vehicle_theft_raw[2, ])
+
+# Remove inconsistent leading or trailing spaces
+city_headers <- str_trim(city_headers)
+measure_headers <- str_trim(measure_headers)
+
+city_headers[1] <- "Date"
+measure_headers[1] <- "Date"
+
+# Fill each city name across its three measurement columns
+for (i in 2:length(city_headers)) {
+  if (city_headers[i] == "") {
+    city_headers[i] <- city_headers[i - 1]
+  }
+}
+
+# Combine city and measurement labels into column names
+new_names <- ifelse(
+  city_headers == "Date",
+  "Date",
+  paste(city_headers, measure_headers, sep = "_")
+)
+
+# Remove the two header rows
+vehicle_theft_data <- vehicle_theft_raw[-c(1, 2), ]
+
+names(vehicle_theft_data) <- new_names
+
+vehicle_theft_data[1:6, 1:10]
+```
+
+## Reshape to long 
+```{r}
+vehicle_theft_tidy <- vehicle_theft_data %>%
+  pivot_longer(
+    cols = -Date,
+    names_to = c("city", "measure"),
+    names_pattern = "^(.*)_(Kia/Hyundais|All|Percent)$",
+    values_to = "value"
+  ) %>%
+  pivot_wider(
+    names_from = measure,
+    values_from = value
+  ) %>%
+  rename(
+    date = Date,
+    kia_hyundai_thefts = `Kia/Hyundais`,
+    all_thefts = All,
+    percent = Percent
+  ) %>%
+  mutate(
+    date = as.Date(date),
+    kia_hyundai_thefts = as.numeric(kia_hyundai_thefts),
+    all_thefts = as.numeric(all_thefts),
+    percent = as.numeric(percent)
+  ) %>%
+  arrange(date, city)
+
+head(vehicle_theft_tidy, 12)
+```
+
+```{r}
+dim(vehicle_theft_tidy)
+colSums(is.na(vehicle_theft_tidy))
+```
+
+The tidy dataset contains missing observations in the theft and percentage variables. These missing values were preserved as `NA` rather than converted to zero because the absence of a reported value does not necessarily indicate that no thefts occurred. Analyses below use available observations and exclude missing values only when required for a calculation.
+
+# Analytical Methods
+
+The analysis uses only the tidy version of the dataset. I examine how the percentage of vehicle thefts involving Kia and Hyundai vehicles changed over time and compare patterns across cities.
+
+Because the dataset contains missing observations for some cities and reporting periods, summary calculations use only available values. I calculate the average Kia/Hyundai theft percentage across cities for each reporting date and identify cities with the highest average percentages across their available observations.
+
+## Trend Over Time 
+```{r}
+monthly_summary <- vehicle_theft_tidy %>%
+  group_by(date) %>%
+  summarise(
+    average_percent = mean(percent, na.rm = TRUE) * 100,
+    .groups = "drop"
+  )
+
+head(monthly_summary)
+```
+
+## Identify Cities with Highest Average Kia/Hyundai Percentage
+```{r}
+city_summary <- vehicle_theft_tidy %>%
+  group_by(city) %>%
+  summarise(
+    average_percent = mean(percent, na.rm = TRUE) * 100,
+    observations = sum(!is.na(percent)),
+    .groups = "drop"
+  ) %>%
+  filter(observations > 0) %>%
+  arrange(desc(average_percent))
+
+top_cities <- city_summary %>%
+  slice_head(n = 10)
+
+knitr::kable(
+  top_cities,
+  digits = 2,
+  col.names = c(
+    "City",
+    "Average Kia/Hyundai Theft Percentage (%)",
+    "Available Observations"
+  ),
+  caption = "Cities with the Highest Average Kia/Hyundai Theft Percentages"
+)
+```
+
+## Average Theft Over Time 
+```{r}
+ggplot(
+  monthly_summary,
+  aes(x = date, y = average_percent)
+) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "Average Percentage of Vehicle Thefts Involving Kia/Hyundai",
+    subtitle = "Average across cities with available data",
+    x = "Date",
+    y = "Average Kia/Hyundai Theft Percentage (%)"
+  ) +
+  theme_minimal()
+```
+
+
+## Top 10 Cities 
+```{r}
+ggplot(
+  top_cities,
+  aes(x = reorder(city, average_percent), y = average_percent)
+) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Cities with the Highest Average Kia/Hyundai Theft Percentages",
+    subtitle = "Average across available reporting periods",
+    x = "City",
+    y = "Average Kia/Hyundai Theft Percentage (%)"
+  ) +
+  theme_minimal()
+```
+
+# Results
+
+The percentage of reported vehicle thefts involving Kia and Hyundai vehicles changed substantially over the period covered by the dataset. At the beginning of the series, the average across cities with available data was 5.55% in December 2019. The percentage remained relatively low through 2020 and 2021, generally fluctuating around the single digit range.
+
+Beginning in 2022, the average percentage increased sharply. By 2023, Kia and Hyundai vehicles accounted for more than 20% of reported vehicle thefts on average across cities with available data, with the series eventually reaching approximately 30%. This indicates a substantial increase in the share of vehicle thefts involving these manufacturers during the later portion of the dataset.
+
+There were also considerable differences among cities. Milwaukee, Wisconsin had the highest average Kia/Hyundai theft percentage at 45.98% across 45 available observations. Atlanta had the second-highest average at 23.71%, followed by Rochester, New York at 23.17% and St. Petersburg, Florida at 23.10%. Milwaukee therefore stands out substantially from the other cities in the analysis.
+
+# Conclusion
+
+Transforming the vehicle theft dataset from its original wide structure into tidy format made it possible to analyze patterns across cities and reporting dates consistently. The original dataset stored city names and measurement types across two header rows, while the tidy dataset contains separate variables for date, city, Kia/Hyundai thefts, all vehicle thefts, and percentage.
+
+The transformation also revealed inconsistent spacing in the original measurement labels and missing observations. Whitespace was standardized programmatically, while missing observations were retained as `NA` rather than interpreted as zero.
+
+The analysis shows a pronounced increase in the percentage of vehicle thefts involving Kia and Hyundai vehicles, particularly beginning in 2022. It also reveals substantial variation across cities, with Milwaukee having a notably higher average percentage than the other cities examined. Overall, tidying the dataset made these temporal and geographic patterns much easier to identify and compare.

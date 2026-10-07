@@ -16,4 +16,167 @@ execute:
 
 Dataset: [SSA Top Baby Names](https://www.ssa.gov/oact/babynames/top5names.html)
 
-For this dataset, I will use the Social Security Administration’s historical table of the five most popular male and female baby names by year. The original data is presented in a wide format, with separate columns for each ranked female and male name. I will first recreate and save the original structure as a CSV file so that the raw data is preserved before any transformations are performed. Using tidyr and dplyr, I will transform the dataset from wide to long format so that each row represents a single name for a particular year, sex, and rank. Instead of maintaining separate columns for each ranking and sex, the tidy dataset will contain variables such as year, sex, rank, and name. I will also standardize the variable names and check for missing or inconsistent values. After tidying the data, I will analyze how the most popular baby names have changed over time. I plan to identify names that appeared in the top five most frequently, determine which names held the number-one position most often, and examine changes in naming patterns across years or decades. Visualizations will be used to show changes in name popularity and compare patterns between male and female names.
+For this dataset, I will use the Social Security Administration’s historical table of the five most popular male and female baby names by year. The original data is presented in a wide format, with separate columns for each ranked female and male name. I will first recreate and save the original structure as a CSV file so that the raw data is preserved before any transformations are performed. Using tidyr and dplyr, I will transform the dataset from wide to long format so that each row represents a single name for a particular year, sex, and rank. Instead of maintaining separate columns for each ranking and sex, the tidy dataset will contain variables such as year, sex, rank, and name. I will also standardize the variable names and check for missing or inconsistent values. After tidying the data, I will analyze how the most popular baby names have changed over time. I plan to identify names that appeared in the top five most frequently, determine which names held the number one position most often, and examine changes in naming patterns across years or decades. Visualizations will be used to show changes in name popularity and compare patterns between male and female names.
+
+## Data Source
+
+The data for this analysis comes from the Social Security Administration (SSA) and contains the five most popular baby names for girls and boys for each year from 1926 through 2025. The original data was saved as `baby_names_raw.csv` and committed to GitHub before any transformations were performed.
+The raw dataset is stored in a wide format, with separate columns for each combination of sex and rank.
+
+## Load Packages and Import Raw Data
+
+```{r}
+library(tidyverse)
+
+baby_names_raw <- read.csv("baby_names_raw.csv")
+head(baby_names_raw)
+str(baby_names_raw)
+```
+
+## Data Structure Before Tidying
+
+In the original dataset, each row represents one year. However, the baby names are spread across ten separate columns: five ranked names for girls and five ranked names for boys. Therefore, information about sex and rank is stored within the column names rather than as separate variables.
+
+This wide structure is useful for displaying rankings, but it is not ideal for analysis. A tidy structure should have one observation per row and separate variables for year, sex, rank, and name.
+
+```{r}
+dim(baby_names_raw)
+names(baby_names_raw)
+head(baby_names_raw)
+```
+
+## Transformation Steps
+
+To convert the dataset from wide to tidy format, I use `pivot_longer()` to combine the ten ranking columns into two temporary variables: one containing the original column name and another containing the corresponding baby name.
+
+I then use `separate()` to divide the original column names into sex and rank. Finally, I standardize the sex labels and convert rank to a numeric variable.
+
+```{r}
+baby_names_tidy <- baby_names_raw %>%
+  pivot_longer(
+    cols = -Year,
+    names_to = "sex_rank",
+    values_to = "name"
+  ) %>%
+  separate(
+    sex_rank,
+    into = c("sex", "rank"),
+    sep = "_Rank_"
+  ) %>%
+  mutate(
+    sex = recode(
+      sex,
+      "Girls" = "Female",
+      "Boys" = "Male"
+    ),
+    rank = as.integer(rank)
+  ) %>%
+  rename(year = Year) %>%
+  arrange(year, sex, rank)
+
+head(baby_names_tidy, 10)
+```
+
+## Check Results and Missing Values 
+```{r}
+dim(baby_names_tidy)
+str(baby_names_tidy)
+
+colSums(is.na(baby_names_tidy))
+```
+
+After tidying, each row represents one ranked baby name for a specific year and sex. The final variables are year, sex, rank, and name. The missing-value check returned zero missing values across all four variables, so no imputation or row removal was necessary.
+
+# Analytical Methods
+
+The analysis uses only the tidy version of the dataset. I examine which names appeared most frequently in the top five rankings, which names held the number-one position most often, and how the most popular names changed over time. I also compare patterns between female and male names.
+Counts and grouped summaries are calculated using `dplyr`, and visualizations are created using `ggplot2`.
+
+## Analysis 1: Most Frequent "Top 5" Names
+```{r}
+top_names <- baby_names_tidy %>%
+  count(sex, name, sort = TRUE) %>%
+  group_by(sex) %>%
+  slice_max(order_by = n, n = 10, with_ties = FALSE) %>%
+  ungroup()
+
+top_names
+```
+
+## Analysis 2: Visualize the Most Frequent "Top 5" Names
+```{r}
+ggplot(top_names, aes(x = reorder(name, n), y = n, fill = sex)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  facet_wrap(~sex, scales = "free_y") +
+  scale_fill_manual(
+    values = c("Female" = "lightpink", "Male" = "lightblue")
+  ) +
+  labs(
+    title = "Most Frequent Top-Five Baby Names, 1926–2025",
+    x = "Name",
+    y = "Number of Years in the Top Five"
+  ) +
+  theme_minimal()
+```
+
+## Analysis 3: Most Frequent #1 Names
+```{r} 
+number_one_names <- baby_names_tidy %>%
+  filter(rank == 1) %>%
+  count(sex, name, sort = TRUE) %>%
+  group_by(sex) %>%
+  slice_max(order_by = n, n = 10, with_ties = FALSE) %>%
+  ungroup()
+
+number_one_names
+```
+
+## Analysis 4: Time Based Visualization of Names
+```{r}
+number_one_by_year <- baby_names_tidy %>%
+  filter(rank == 1)
+
+ggplot(number_one_by_year, aes(x = year, y = name, fill = sex)) +
+  geom_tile() +
+  facet_wrap(~sex, scales = "free_y") +
+  scale_fill_manual(
+    values = c("Female" = "lightpink", "Male" = "lightblue")
+  ) +
+  labs(
+    title = "Number-One Baby Names Over Time, 1926–2025",
+    subtitle = "Each tile represents a year in which a name ranked #1",
+    x = "Year",
+    y = "Name"
+  ) +
+  guides(fill = "none") +
+  theme_minimal()
+```
+
+# Results
+
+The analysis shows that several names remained popular for long periods of time. Among female names, Mary appeared in the top five for 42 of the 100 years, substantially more often than any other female name. Emma appeared for 24 years and Linda for 23 years. Among male names, James and Michael each appeared in the top five for 62 years, followed by John with 47 years and Robert with 46 years.
+
+Looking specifically at the number one ranked name reveals even stronger patterns. Mary was the most frequently ranked number-one female name, holding the top position for 30 years. Jennifer followed with 15 years, while Emily held the top position for 12 years. For male names, Michael was especially dominant, ranking number one for 44 years. Robert ranked first for 15 years, Jacob for 14 years, and James for 13 years.
+
+The visualization of number one names over time also shows that popularity often occurred in distinct periods. Female number-one names changed more frequently, while male rankings were dominated by a smaller number of names for longer periods. Michael's extended period as the number one male name is particularly visible in the data.
+
+```{r}
+number_one_summary <- number_one_names %>%
+  rename(
+    Sex = sex,
+    Name = name,
+    `Years Ranked #1` = n
+  )
+
+knitr::kable(
+  number_one_summary,
+  caption = "Most Frequent Number-One Baby Names, 1926–2025"
+)
+```
+
+# Conclusion
+
+Transforming the SSA baby name data from wide to long format made it much easier to analyze changes in name popularity across years, sex, and rank. Instead of storing sex and rank information within separate column names, the tidy dataset represents these characteristics as individual variables that can be grouped, filtered, summarized, and visualized directly.
+
+The analysis shows that some names maintained popularity for decades. Mary was the most persistent female name in both top 5 appearances and number-one rankings, while James and Michael had the most top 5 appearances among male names. Michael was particularly dominant at rank one, holding the position for 44 of the 100 years analyzed. Overall, the results also suggest greater turnover among number-one female names than among male names during this period.

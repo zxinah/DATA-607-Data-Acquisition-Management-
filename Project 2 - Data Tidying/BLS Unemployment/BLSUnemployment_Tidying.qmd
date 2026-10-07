@@ -16,4 +16,223 @@ execute:
 
 Dataset :[BLS State Unemployment](https://www.bls.gov/news.release/archives/laus_04082026.htm)
 
-For this dataset, I will use state unemployment data from the U.S. Bureau of Labor Statistics. The original table reports unemployment rates for states across multiple time periods in separate columns, making it appropriate for a wide-to-long transformation. I will preserve the selected BLS table in its original wide structure as a CSV before performing any transformations. Using tidyr and dplyr, I will reshape the unemployment columns into a long format in which each row represents the unemployment rate for one state during one time period. The resulting dataset will contain variables such as state, period, and unemployment_rate. I will standardize column names, convert values to appropriate data types, and investigate any missing or inconsistent observations. Using the tidy dataset, I will compare unemployment rates between the available periods and examine how unemployment changed across states. I plan to identify states with the largest increases and decreases, calculate summary statistics for unemployment rates, and compare individual states with the overall distribution. Visualizations will be used to clearly display differences between states and changes over time.
+For this dataset, I will use state unemployment data from the U.S. Bureau of Labor Statistics. The original table reports unemployment rates for states across multiple time periods in separate columns, making it appropriate for a wide to long transformation. I will preserve the selected BLS table in its original wide structure as a CSV before performing any transformations. Using tidyr and dplyr, I will reshape the unemployment columns into a long format in which each row represents the unemployment rate for one state during one time period. The resulting dataset will contain variables such as state, period, and unemployment rate. I will standardize column names, convert values to appropriate data types, and investigate any missing or inconsistent observations. Using the tidy dataset, I will compare unemployment rates between the available periods and examine how unemployment changed across states. I plan to identify states with the largest increases and decreases, calculate summary statistics for unemployment rates, and compare individual states with the overall distribution. Visualizations will be used to display differences between states and changes over time.
+
+## Data Source
+
+The data for this analysis comes from the U.S. Bureau of Labor Statistics (BLS) State Employment and Unemployment release. The dataset contains civilian labor force totals, numbers of unemployed individuals, and unemployment rates for U.S. states and selected areas across January 2025, November 2025, December 2025, and January 2026.
+
+The original table was saved as `unemployment_raw.csv` and committed to GitHub before any transformations were performed.
+
+## Load Packages and Import Raw Data
+```{r}
+library(tidyverse)
+
+unemployment_raw <- read.csv("unemployment_raw.csv")
+
+head(unemployment_raw)
+str(unemployment_raw)
+```
+
+## Data Structure Before Tidying
+
+The original dataset is stored in wide format. Each geographic area occupies one row, while measurements for different time periods are stored in separate columns. For example, unemployment rates for January 2025, November 2025, December 2025, and January 2026 are represented by four different columns.
+
+This structure stores both the type of measurement and the time period within column names. To create a tidy dataset, these components will be separated into individual variables so that each row represents one state, measurement, and time period.
+
+```{r}
+dim(unemployment_raw)
+names(unemployment_raw)
+head(unemployment_raw)
+```
+
+## Transformation Steps
+
+I use `pivot_longer()` to transform the repeated measurement columns into a long format. The original column names contain two pieces of information: the measurement being reported and the corresponding month and year. These components are separated into `measure` and `period` variables during the transformation.
+
+The resulting dataset contains one observation for each geographic area, measurement type, and time period.
+
+```{r}
+unemployment_tidy <- unemployment_raw %>%
+  pivot_longer(
+    cols = -State,
+    names_to = c("measure", "period"),
+    names_pattern = "(.*)_(Jan_2025|Nov_2025|Dec_2025|Jan_2026)",
+    values_to = "value"
+  ) %>%
+  mutate(
+    measure = recode(
+      measure,
+      "Labor_Force" = "Labor Force",
+      "Unemployed_Number" = "Unemployed Number",
+      "Unemployment_Rate" = "Unemployment Rate"
+    ),
+    period = recode(
+      period,
+      "Jan_2025" = "January 2025",
+      "Nov_2025" = "November 2025",
+      "Dec_2025" = "December 2025",
+      "Jan_2026" = "January 2026"
+    )
+  ) %>%
+  rename(state = State)
+
+head(unemployment_tidy, 12)
+```
+
+```{r}
+dim(unemployment_tidy)
+str(unemployment_tidy)
+
+colSums(is.na(unemployment_tidy))
+```
+
+The missing value check returned zero missing values across all four variables, so no imputation or row removal was necessary.
+
+# Analytical Methods
+
+The analysis uses only the tidy version of the dataset. I focus on unemployment rates to compare geographic areas across the four reported periods and examine how unemployment changed between January 2025 and January 2026.
+
+I calculate summary statistics for each period and identify the geographic areas with the largest increases and decreases in unemployment rates over the one-year period. Visualizations are used to show both overall unemployment patterns and changes across geographic areas.
+
+## Unemployment Rates by Period
+```{r}
+unemployment_summary <- unemployment_tidy %>%
+  filter(measure == "Unemployment Rate") %>%
+  group_by(period) %>%
+  summarise(
+    `Mean Rate (%)` = round(mean(value), 2),
+    `Median Rate (%)` = round(median(value), 2),
+    `Minimum Rate (%)` = min(value),
+    `Maximum Rate (%)` = max(value),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  unemployment_summary,
+  caption = "Summary of Unemployment Rates by Period"
+)
+```
+
+
+## Change from January 2025 to January 2026
+
+```{r}
+rate_change <- unemployment_tidy %>%
+  filter(
+    measure == "Unemployment Rate",
+    period %in% c("January 2025", "January 2026")
+  ) %>%
+  select(state, period, value) %>%
+  pivot_wider(
+    names_from = period,
+    values_from = value
+  ) %>%
+  mutate(
+    change = `January 2026` - `January 2025`
+  ) %>%
+  arrange(desc(change))
+
+rate_change
+```
+
+## Largest Changes in Unemployment Rates 
+
+```{r}
+largest_changes <- bind_rows(
+  rate_change %>%
+    slice_max(change, n = 5, with_ties = FALSE),
+  
+  rate_change %>%
+    slice_min(change, n = 5, with_ties = FALSE)
+) %>%
+  arrange(desc(change)) %>%
+  rename(
+    `Geographic Area` = state,
+    `January 2025 Rate (%)` = `January 2025`,
+    `January 2026 Rate (%)` = `January 2026`,
+    `Change (Percentage Points)` = change
+  )
+
+knitr::kable(
+  largest_changes,
+  caption = "Largest Changes in Unemployment Rates, January 2025 to January 2026"
+)
+```
+
+## Average Unemployment Rates Over Time
+
+```{r}
+unemployment_rates <- unemployment_tidy %>%
+  filter(measure == "Unemployment Rate") %>%
+  mutate(
+    period = factor(
+      period,
+      levels = c(
+        "January 2025",
+        "November 2025",
+        "December 2025",
+        "January 2026"
+      )
+    )
+  )
+
+average_rates <- unemployment_rates %>%
+  group_by(period) %>%
+  summarise(
+    average_rate = mean(value),
+    .groups = "drop"
+  )
+
+ggplot(
+  average_rates,
+  aes(x = period, y = average_rate, group = 1)
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  labs(
+    title = "Average Unemployment Rate Across Geographic Areas",
+    subtitle = "January 2025 to January 2026",
+    x = "Period",
+    y = "Average Unemployment Rate (%)"
+  ) +
+  theme_minimal()
+```
+
+## Areas with Largest Changes
+```{r}
+ggplot(
+  largest_changes,
+  aes(
+    x = reorder(`Geographic Area`, `Change (Percentage Points)`),
+    y = `Change (Percentage Points)`,
+    fill = `Change (Percentage Points)` > 0
+  )
+) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("TRUE" = "coral", "FALSE" = "lightgreen")
+  ) +
+  labs(
+    title = "Largest Changes in Unemployment Rates",
+    subtitle = "January 2025 to January 2026",
+    x = "Geographic Area",
+    y = "Change in Unemployment Rate (Percentage Points)"
+  ) +
+  theme_minimal()
+```
+
+# Results
+
+The average unemployment rate across the 52 geographic areas increased from 3.89% in January 2025 to 4.13% in January 2026. The median increased from 3.85% to 4.30% over the same period. The maximum unemployment rate also increased from 5.7% to 6.7%, while the minimum increased from 2.0% to 2.2%.
+
+The largest increase occurred in Delaware, where the unemployment rate rose from 4.1% to 5.4%, an increase of 1.3 percentage points. Minnesota, the District of Columbia, and Florida each increased by 1.0 percentage point, while Connecticut increased by 0.9 percentage points.
+
+The largest decreases occurred in Indiana, Kentucky, and Ohio, where unemployment rates each fell by 0.5 percentage points. Alabama and Colorado each decreased by 0.4 percentage points. Overall, the results indicate that unemployment rates were somewhat higher across the included geographic areas in January 2026 than in January 2025, although the direction and magnitude of change varied considerably by location.
+
+# Conclusion
+
+Transforming the BLS unemployment data from wide to long format separated the measurement type and reporting period that were originally embedded within the column names. The resulting tidy structure makes it possible to filter, group, summarize, and visualize labor-market measures consistently across geographic areas and time periods.
+
+The analysis shows a modest overall increase in unemployment rates between January 2025 and January 2026. However, the changes were not uniform across geographic areas. Delaware experienced the largest increase, while Indiana, Kentucky, and Ohio experienced the largest decreases. This demonstrates how a tidy structure makes both overall trends and differences between individual geographic areas easier to identify.
