@@ -1,0 +1,19 @@
+---
+title: "Project 2 Data Tidying: Vehicle Theft"
+author: "Zaina Hassan"
+date: today
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: flatly
+execute:
+  echo: true
+  warning: false
+---
+
+# Approach
+
+Dataset: [Kia and Hyundai Vehicle Theft](https://docs.google.com/spreadsheets/d/1-6614t_Ata5k7oESrm-HAdF1uOe8aPGRaQECl44GYeE/edit?gid=0#gid=0)
+
+For this dataset, I will use the Motherboard/VICE News dataset containing Kia and Hyundai vehicle theft statistics across multiple U.S. cities. This dataset has a particularly wide structure because individual cities are distributed across many columns, with repeated measurements for Kia/Hyundai thefts, total vehicle thefts, and the percentage represented by Kia and Hyundai vehicles. I will first preserve the original wide data before using tidyr and dplyr to reorganize it into a tidy long format. The transformation will restructure the repeated city and measurement columns so that observations are represented by variables such as date, city, theft_measure, and value. Where appropriate, I will further separate or transform variables so that Kia/Hyundai theft counts, total theft counts, and percentages can be analyzed consistently. I will also standardize variable names and document decisions concerning missing or inconsistent values. After tidying the dataset, I will analyze how Kia and Hyundai theft patterns changed over time and differed among cities. I plan to compare Kia/Hyundai thefts with overall vehicle thefts, examine changes in the percentage of vehicle thefts involving Kia and Hyundai vehicles, and identify cities with particularly large increases or high proportions. Time-series and comparative visualizations will be used to show how these patterns vary across locations and over time.

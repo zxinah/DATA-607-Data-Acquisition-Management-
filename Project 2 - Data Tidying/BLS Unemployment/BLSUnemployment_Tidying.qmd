@@ -1,0 +1,19 @@
+---
+title: "Project 2 Data Tidying: BLS Unemployment"
+author: "Zaina Hassan"
+date: today
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: flatly
+execute:
+  echo: true
+  warning: false
+---
+
+# Approach
+
+Dataset :[BLS State Unemployment](https://www.bls.gov/news.release/archives/laus_04082026.htm)
+
+For this dataset, I will use state unemployment data from the U.S. Bureau of Labor Statistics. The original table reports unemployment rates for states across multiple time periods in separate columns, making it appropriate for a wide-to-long transformation. I will preserve the selected BLS table in its original wide structure as a CSV before performing any transformations. Using tidyr and dplyr, I will reshape the unemployment columns into a long format in which each row represents the unemployment rate for one state during one time period. The resulting dataset will contain variables such as state, period, and unemployment_rate. I will standardize column names, convert values to appropriate data types, and investigate any missing or inconsistent observations. Using the tidy dataset, I will compare unemployment rates between the available periods and examine how unemployment changed across states. I plan to identify states with the largest increases and decreases, calculate summary statistics for unemployment rates, and compare individual states with the overall distribution. Visualizations will be used to clearly display differences between states and changes over time.

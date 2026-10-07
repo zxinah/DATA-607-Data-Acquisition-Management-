@@ -1,0 +1,19 @@
+---
+title: "Project 2 Data Tidying: Baby Names"
+author: "Zaina Hassan"
+date: today
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: flatly
+execute:
+  echo: true
+  warning: false
+---
+
+# Approach
+
+Dataset: [SSA Top Baby Names](https://www.ssa.gov/oact/babynames/top5names.html)
+
+For this dataset, I will use the Social Security Administration’s historical table of the five most popular male and female baby names by year. The original data is presented in a wide format, with separate columns for each ranked female and male name. I will first recreate and save the original structure as a CSV file so that the raw data is preserved before any transformations are performed. Using tidyr and dplyr, I will transform the dataset from wide to long format so that each row represents a single name for a particular year, sex, and rank. Instead of maintaining separate columns for each ranking and sex, the tidy dataset will contain variables such as year, sex, rank, and name. I will also standardize the variable names and check for missing or inconsistent values. After tidying the data, I will analyze how the most popular baby names have changed over time. I plan to identify names that appeared in the top five most frequently, determine which names held the number-one position most often, and examine changes in naming patterns across years or decades. Visualizations will be used to show changes in name popularity and compare patterns between male and female names.
