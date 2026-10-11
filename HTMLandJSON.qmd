@@ -1,0 +1,25 @@
+---
+title: "HTML and JSON"
+author: "Zaina Hassan"
+date: today
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: flatly
+execute:
+  echo: true
+  warning: false
+---
+
+# Approach 
+
+For this assignment, my goal is to become more familiar with HTML and JSON file formats by manually creating two files containing the same book information, importing each into a separate R data frame, and comparing the results to determine whether the two data frames are identical.
+
+I will use three books within the genres of mystery, horror, and dystopian fiction: The Silent Patient by Alex Michaelides, The Talisman by Stephen King and Peter Straub, and The Handmaid's Tale by Margaret Atwood. For each book, I will record the title, author(s), publication year, publisher, and genre. I chose these books because they share similar dark themes while representing different subgenres. The Talisman also satisfies the requirement of including a book with multiple authors.
+
+I will first manually create an HTML file containing the book information in a table, followed by a JSON file containing the same information in a structured format. I will make sure both files contain matching values and consistent column names to make comparisons easier.
+
+Next, I will use the rvest package to extract the HTML table and the jsonlite package to import the JSON data into R. I will examine the structure of both data frames and use the identical() function to determine whether they match in terms of values, column names, data types, and row order.
+
+Finally, I will summarize the comparison results and discuss any differences or challenges encountered when working with the two file formats.
