@@ -1,0 +1,97 @@
+---
+title: "Working with HTML and JSON Data"
+author: "Zaina Hassan"
+format: html
+execute:
+  warning: false
+  message: false
+---
+
+# Approach 
+
+For this assignment, my goal is to become more familiar with HTML and JSON file formats by manually creating two files containing the same book information, importing each into a separate R data frame, and comparing the results to determine whether the two data frames are identical.
+
+I will use three books within the genres of mystery, horror, and dystopian fiction: The Silent Patient by Alex Michaelides, The Talisman by Stephen King and Peter Straub, and The Handmaid's Tale by Margaret Atwood. For each book, I will record the title, author(s), publication year, publisher, and genre. I chose these books because they share similar dark themes while representing different subgenres. The Talisman also satisfies the requirement of including a book with multiple authors.
+
+I will first manually create an HTML file containing the book information in a table, followed by a JSON file containing the same information in a structured format. I will make sure both files contain matching values and consistent column names to make comparisons easier.
+
+Next, I will use the rvest package to extract the HTML table and the jsonlite package to import the JSON data into R. I will examine the structure of both data frames and use the identical() function to determine whether they match in terms of values, column names, data types, and row order.
+
+Finally, I will summarize the comparison results and discuss any differences or challenges encountered when working with the two file formats.
+
+## Load Required Packages 
+```{r}
+#Only required once 
+install.packages(c("rvest", "jsonlite", "dplyr"))
+```
+
+```{r}
+#Load packages
+library(rvest)     # Read and extract HTML tables
+library(jsonlite)  # Read and convert JSON data
+library(dplyr)     # Data manipulation and comparison
+```
+
+### Import HTML Data 
+```{r}
+# Read the HTML file
+html_page <- read_html("Week 7/books.html")
+
+# Extract the first HTML table
+html_books <- html_page |>
+  html_element("table") |>
+  html_table()
+
+# Convert to a data frame
+html_books <- as.data.frame(html_books)
+
+# Display data and structure
+print(html_books)
+str(html_books)
+```
+
+### Import JSON Data
+```{r}
+# Read the JSON file
+json_books <- fromJSON("Week 7/books.json")
+
+# Convert to a data frame
+json_books <- as.data.frame(json_books)
+
+# Display data and structure
+print(json_books)
+str(json_books)
+```
+
+### Verify Comparison 
+```{r}
+# Compare dimensions
+dim(html_books)
+dim(json_books)
+
+# Compare column names
+identical(names(html_books), names(json_books))
+
+# Compare data types
+sapply(html_books, class)
+sapply(json_books, class)
+
+# Compare the entire data frames
+identical(html_books, json_books)
+```
+
+## Results 
+
+Both the HTML and JSON files were successfully imported into R and converted into separate data frames. Each data frame contained 3 observations and 5 variables: Title, Authors, Publication_Year, Publisher, and Genre.
+
+Using the `str()` function, I confirmed that both data frames had matching column names and data types. The publication year was stored as an integer, while the remaining variables were stored as character values.
+
+Finally, I used the `identical()` function to compare the two data frames, which returned `TRUE`. This confirms that the HTML and JSON files produced identical data frames, including their values, column names, data types, and structure.
+
+# Conclusion 
+
+This assignment helped me better understand how HTML and JSON store and organize the same information differently. HTML uses tables, rows, and cells to display structured data, while JSON uses objects and key value pairs to represent information.
+
+Although the two file formats have different structures, I was able to import both into R using the `rvest` and `jsonlite` packages. The comparison confirmed that both formats produced identical data frames when the information was organized consistently.
+
+One important takeaway was the importance of maintaining consistent column names, data types, and values when working with different data sources. This exercise also provided useful practice for working with web based data, which will be relevant when using web scraping and APIs in future assignments.

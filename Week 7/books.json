@@ -1,0 +1,24 @@
+
+[
+  {
+    "Title": "The Silent Patient",
+    "Authors": "Alex Michaelides",
+    "Publication_Year": 2019,
+    "Publisher": "Celadon Books",
+    "Genre": "Psychological thriller"
+  },
+  {
+    "Title": "The Talisman",
+    "Authors": "Stephen King; Peter Straub",
+    "Publication_Year": 1984,
+    "Publisher": "Viking Press",
+    "Genre": "Dark fantasy / horror"
+  },
+  {
+    "Title": "The Handmaid's Tale",
+    "Authors": "Margaret Atwood",
+    "Publication_Year": 1985,
+    "Publisher": "McClelland & Stewart",
+    "Genre": "Dystopian fiction"
+  }
+]
