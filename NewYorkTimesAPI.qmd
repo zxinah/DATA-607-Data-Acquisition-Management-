@@ -1,0 +1,19 @@
+---
+title: "Exploring New York Times Best Sellers Using an API"
+author: "Zaina Hassan"
+format:
+  html:
+    embed-resources: true
+    toc: true
+editor: visual
+---
+
+# Approach
+
+For this assignment, I plan to use the New York Times Books API to explore bestseller rankings and investigate which authors appear most frequently across different bestseller lists. My main research question is: Which authors have the most appearances across the New York Times Best Sellers lists, and how are books distributed across the different list categories? I chose this topic because I am interested in examining patterns in book popularity and whether certain authors have a stronger presence across multiple categories or formats.
+
+I will use the /lists/overview.json endpoint, which provides information about bestseller lists, including book titles, authors, publishers, rankings, and the number of weeks each book has remained on a list. I plan to retrieve the latest available bestseller data rather than focus on a specific historical date. To access the API, I will register an application through the NYT Developer Portal and store my API key as an environment variable rather than including it directly in my code.
+
+In R, I will use the httr package to make the API request and jsonlite to parse the JSON response. Since the data is organized into nested lists containing individual books, I anticipate needing to restructure it into a tidy data frame using purrr, tibble, and dplyr. I will select the variables relevant to my analysis, check for missing values, and ensure that numerical fields are stored in the appropriate formats.
+
+Once the data is cleaned, I plan to identify the ten authors with the most bestseller-list appearances and compare the number of book entries across categories. I will also consider how books appearing on multiple lists might affect these counts. My overall goal is to practice retrieving and transforming data from a public API while using the resulting dataset to answer a meaningful research question.
