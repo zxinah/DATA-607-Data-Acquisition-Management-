@@ -17,3 +17,130 @@ I will use the /lists/overview.json endpoint, which provides information about b
 In R, I will use the httr package to make the API request and jsonlite to parse the JSON response. Since the data is organized into nested lists containing individual books, I anticipate needing to restructure it into a tidy data frame using purrr, tibble, and dplyr. I will select the variables relevant to my analysis, check for missing values, and ensure that numerical fields are stored in the appropriate formats.
 
 Once the data is cleaned, I plan to identify the ten authors with the most bestseller-list appearances and compare the number of book entries across categories. I will also consider how books appearing on multiple lists might affect these counts. My overall goal is to practice retrieving and transforming data from a public API while using the resulting dataset to answer a meaningful research question.
+
+# API Selection
+
+**API:** New York Times Books API
+
+**Endpoint:** `https://api.nytimes.com/svc/books/v3/lists/overview.json`
+
+This endpoint provides an overview of the New York Times bestseller lists for a given publication date.
+
+**Request parameters:**
+
+- `api-key`: Authenticates the request using an environment variable.
+- No date parameter: Requests the latest available bestseller overview.
+
+# Packages
+
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(tibble)
+```
+
+I used `httr` to make the API request, `jsonlite` to parse the JSON response, and `dplyr`, `tidyr`, `purrr`, and `tibble` to organize and analyze the resulting data.
+
+# API Request
+
+```{r}
+api_key <- Sys.getenv("NYT_API_KEY")
+
+if (!nzchar(api_key)) {
+  stop("NYT_API_KEY is not set.")
+}
+
+url <- "https://api.nytimes.com/svc/books/v3/lists/overview.json"
+
+response <- GET(
+  url,
+  query = list(`api-key` = api_key)
+)
+
+stop_for_status(response)
+
+nyt_data <- fromJSON(
+  content(response, as = "text", encoding = "UTF-8"),
+  simplifyVector = FALSE
+)
+
+nyt_data$status
+```
+
+# Transform JSON into a Tidy Data Frame
+
+The API returns nested JSON, with multiple bestseller lists containing individual books. I used `map_dfr()` to extract the book information and combine it into one data frame.
+
+```{r}
+books_df <- map_dfr(nyt_data$results$lists, function(lst) {
+  map_dfr(lst$books, function(book) {
+    tibble(
+      list_name = lst$list_name,
+      rank = book$rank,
+      title = book$title,
+      author = book$author,
+      publisher = book$publisher,
+      weeks_on_list = book$weeks_on_list
+    )
+  })
+})
+
+books_df <- books_df %>%
+  mutate(
+    rank = as.integer(rank),
+    weeks_on_list = as.integer(weeks_on_list)
+  ) %>%
+  distinct()
+
+head(books_df, 10)
+```
+```{r}
+dim(books_df)
+str(books_df)
+```
+
+# Data Cleaning Decisions
+
+The original JSON response contains nested bestseller lists, each with its own collection of books. I flattened this structure so that each row represents one book appearing on one bestseller list.
+
+I selected the variables most relevant to my research question: list name, rank, title, author, publisher, and weeks on the list.
+
+I also converted ranking and duration fields into integers and removed exact duplicate rows. Missing values, if present, were retained rather than replaced with potentially misleading values.
+
+# Analysis
+
+## Most Frequently Appearing Authors
+
+```{r}
+top_authors <- books_df %>%
+  count(author, sort = TRUE, name = "appearances") %>%
+  slice_head(n = 10)
+
+top_authors
+```
+
+This table identifies the authors with the most book appearances across the retrieved bestseller lists.
+
+## Number of Books by Bestseller List
+
+```{r}
+books_by_list <- books_df %>%
+  count(list_name, sort = TRUE, name = "book_count")
+
+books_by_list
+```
+
+This table summarizes the number of book entries returned for each bestseller list.
+
+# Results
+
+The New York Times Books API request was successful, returning bestseller information across 19 lists and 240 book entries. I was able to extract relevant information from the nested JSON response and organize it into a tidy data frame containing book titles, authors, publishers, rankings, and weeks on the bestseller list.
+
+To answer my research question, I counted how frequently each author appeared across the retrieved lists. Matt Dinniman had the highest number of appearances with 14, followed by J.K. Rowling with 9 and Suzanne Collins with 6. These results suggest that certain authors have a particularly strong presence across multiple bestseller categories.
+
+I also compared the number of entries in each bestseller list. The lists contained either 10 or 15 entries, depending on the category. However, these differences reflect the number of rankings returned by the API rather than a direct measure of reader popularity.
+
+One limitation is that the same book may appear across multiple lists or formats. Therefore, the author counts represent bestseller-list appearances rather than unique books or total sales.
