@@ -1,0 +1,18 @@
+---
+title: "Assignment10B"
+author: "Zaina Hassan"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+For this assignment, I plan to use the Nobel Prize organization's publicly available APIs to explore historical trends and patterns among Nobel Prize laureates. I will retrieve the data in JSON format and use R packages such as `httr`, `jsonlite`, `dplyr`, `tidyr`, and `ggplot2` to extract, clean, transform, and visualize the information.
+
+My analysis will focus on four questions:
+
+1. **Which Nobel Prize categories have awarded the most prizes?** I will compare the number of prizes awarded across categories to identify differences in their historical distributions.
+2. **How has the number of Nobel Prizes awarded changed over time?** I will examine annual trends and visualize how prize distributions have evolved.
+3. **What is the gender distribution of Nobel laureates across different prize categories?** I will compare the representation of male and female laureates across categories using percentages rather than only counts.
+4. **Which countries have produced the most Nobel laureates, and how do their birth countries compare with their affiliations at the time of receiving the award?** This question will involve combining and comparing fields across the JSON data to explore geographic patterns and potential differences between birthplace and institutional affiliation.
+
+I plan to transform the nested JSON structures into tidy data frames, address missing or inconsistent values, and use appropriate tables and visualizations to answer each question. My goal is to demonstrate how JSON data can be retrieved and transformed in R while identifying meaningful historical, demographic, and geographic trends in Nobel Prize awards.
