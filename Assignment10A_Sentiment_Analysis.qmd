@@ -1,0 +1,22 @@
+---
+title: "Sentiment Analysis: From Jane Austen to Amazon Product Reviews"
+author: "Zaina Hassan"
+date: "2026-11-02"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+    theme: cosmo
+execute:
+  warning: false
+  message: false
+---
+
+## Approach
+
+Sentiment analysis uses words and linguistic rules to estimate whether text expresses positive or negative opinions. This report first reproduces the principal Jane Austen example in Chapter 2 of *Text Mining with R* by Julia Silge and David Robinson (2017). It then extends the approach to short Amazon product-review sentences from the UCI Sentiment Labelled Sentences dataset. The extension compares the original Bing and AFINN lexicons with an additional lexicon, Loughran, and evaluates predicted sentiment against the supplied labels.
+
+The book's example examines *narrative trajectories*: changes in the balance of positive and negative words across consecutive 80-line sections of novels. Product reviews have no comparable narrative trajectory, so the extension instead measures sentiment per review. The dataset contains 500 positive and 500 negative Amazon sentences, selected from a larger collection. Thus the sample is intentionally balanced and does not represent the natural prevalence of positive reviews.
+
+**Original example and code:** Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*, Chapter 2, "Sentiment analysis with tidy data." https://www.tidytextmining.com/sentiment . 
