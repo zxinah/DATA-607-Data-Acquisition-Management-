@@ -17,6 +17,347 @@ execute:
 
 Sentiment analysis uses words and linguistic rules to estimate whether text expresses positive or negative opinions. This report first reproduces the principal Jane Austen example in Chapter 2 of *Text Mining with R* by Julia Silge and David Robinson (2017). It then extends the approach to short Amazon product-review sentences from the UCI Sentiment Labelled Sentences dataset. The extension compares the original Bing and AFINN lexicons with an additional lexicon, Loughran, and evaluates predicted sentiment against the supplied labels.
 
-The book's example examines *narrative trajectories*: changes in the balance of positive and negative words across consecutive 80-line sections of novels. Product reviews have no comparable narrative trajectory, so the extension instead measures sentiment per review. The dataset contains 500 positive and 500 negative Amazon sentences, selected from a larger collection. Thus the sample is intentionally balanced and does not represent the natural prevalence of positive reviews.
+The book's example examines narrative trajectories, which means changes in the balance of positive and negative words across consecutive 80 line sections of novels. Product reviews have no comparable narrative trajectory, so the extension instead measures sentiment per review. The dataset contains 500 positive and 500 negative Amazon sentences, selected from a larger collection. Thus the sample is intentionally balanced and does not represent the natural prevalence of positive reviews.
 
-**Original example and code:** Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*, Chapter 2, "Sentiment analysis with tidy data." https://www.tidytextmining.com/sentiment . 
+**Original example and code:** Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*, Chapter 2, "Sentiment analysis with tidy data." https://www.tidytextmining.com/sentiment . The reproduction below follows the book's code structure, with explicit join keys and modern `pivot_wider()` syntax.
+
+## Packages
+
+```{r}
+library(dplyr)       # data manipulation
+library(tidyr)       # reshape sentiment counts
+library(tidytext)    # tokenize text and retrieve lexicons
+library(janeaustenr) # Jane Austen novels
+library(stringr)     # identify chapter headings
+library(ggplot2)     # plots
+library(readr)       # read review text
+library(purrr)       # apply functions consistently
+library(tibble)      # tidy tables
+```
+
+## Part 1 — Reproducing Chapter 2
+
+### Prepare Jane Austen's novels
+
+The original analysis uses `austen_books()` and converts each line of each novel to a tidy table of individual words. The line number is retained so the location of each word within its novel is known.
+
+```{r}
+tidy_books <- austen_books() %>%
+  group_by(book) %>%
+  mutate(
+    linenumber = row_number(),
+    chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", ignore_case = TRUE)))
+  ) %>%
+  ungroup() %>%
+  unnest_tokens(word, text)
+
+tidy_books %>% count(book, name = "total_words")
+```
+
+### Inspect sentiment dictionaries
+
+Bing labels words as positive or negative, AFINN scores them numerically, and NRC assigns emotion categories as well as polarity. These dictionaries are used in the original textbook example.
+
+```{r}
+bing <- get_sentiments("bing")
+afinn <- get_sentiments("afinn")
+nrc <- get_sentiments("nrc")
+
+bing %>% count(sentiment)
+afinn %>% summarise(minimum = min(value), maximum = max(value))
+nrc %>% count(sentiment)
+```
+
+### Joy words in *Emma*
+
+Following the book, I identified words assigned to the NRC category "joy" in *Emma*.
+
+```{r}
+tidy_books %>%
+  filter(book == "Emma") %>%
+  inner_join(nrc %>% filter(sentiment == "joy"), by = "word") %>%
+  count(word, sort = TRUE) %>%
+  slice_head(n = 12)
+```
+
+### Bing sentiment throughout the novels
+
+As in the textbook, each novel is divided into 80-line sections. Within each section, net sentiment is the number of positive Bing words minus the number of negative Bing words.
+
+```{r}
+jane_austen_sentiment <- tidy_books %>%
+  inner_join(bing, by = "word") %>%
+  count(book, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+jane_austen_sentiment %>% slice_head(n = 8)
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+ggplot(jane_austen_sentiment, aes(index, sentiment, fill = book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~book, ncol = 2, scales = "free_x") +
+  labs(title = "Sentiment throughout Jane Austen's novels",
+       subtitle = "Bing positive minus negative words per 80-line section",
+       x = "80-line section", y = "Net sentiment") +
+  theme_minimal()
+```
+
+The plot shows how the relative frequency of positive and negative words changes within each story. The bars are not review ratings or probabilities; they are raw differences in word counts.
+
+### Compare AFINN, Bing, and NRC in *Pride & Prejudice*
+
+The textbook also compares three lexicons within one novel. AFINN sums numerical word scores, whereas Bing and NRC calculate positive minus negative word counts. Because these scales differ, the plots use independent vertical axes.
+
+```{r}
+pride_prejudice <- tidy_books %>% filter(book == "Pride & Prejudice")
+
+pp_afinn <- pride_prejudice %>%
+  inner_join(afinn, by = "word") %>%
+  group_by(index = linenumber %/% 80) %>%
+  summarise(sentiment = sum(value), .groups = "drop") %>%
+  mutate(method = "AFINN")
+
+pp_other <- bind_rows(
+  pride_prejudice %>%
+    inner_join(bing, by = "word") %>%
+    mutate(method = "Bing"),
+  pride_prejudice %>%
+    inner_join(nrc %>% filter(sentiment %in% c("positive", "negative")), by = "word") %>%
+    mutate(method = "NRC")
+) %>%
+  count(method, index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+pp_comparison <- bind_rows(pp_afinn, pp_other)
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8
+ggplot(pp_comparison, aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y") +
+  labs(title = "Sentiment in Pride & Prejudice by lexicon",
+       x = "80-line section", y = "Net sentiment score") +
+  theme_minimal()
+```
+
+### Words driving sentiment in the novels
+
+```{r}
+austen_word_counts <- tidy_books %>%
+  inner_join(bing, by = "word") %>%
+  count(word, sentiment, sort = TRUE)
+
+#| fig-width: 9
+#| fig-height: 6
+austen_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 10, with_ties = FALSE) %>%
+  ungroup() %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  coord_flip() +
+  labs(title = "Common sentiment-bearing words in Jane Austen",
+       x = NULL, y = "Occurrences") +
+  theme_minimal()
+```
+
+## Part 2 — Extension: Amazon product reviews
+
+### Source and acquisition
+
+The UCI dataset *Sentiment Labelled Sentences* (Kotzias et al., 2015) provides three separate collections of sentences from Amazon, Yelp, and IMDb. Only `amazon_cells_labelled.txt`was used, which has 1,000 labeled sentences. Each line contains a review sentence, a tab, and a binary label (0 = negative; 1 = positive). The download is cached locally to make repeated renders more convenient; the original UCI URL remains documented for reproducibility.
+
+```{r}
+zip_url <- "https://archive.ics.uci.edu/static/public/331/sentiment+labelled+sentences.zip"
+zip_path <- "sentiment_labelled_sentences.zip"
+if (!file.exists(zip_path)) {
+  download.file(zip_url, zip_path, mode = "wb", quiet = TRUE)
+}
+
+amazon_file <- "sentiment labelled sentences/amazon_cells_labelled.txt"
+if (!amazon_file %in% unzip(zip_path, list = TRUE)$Name) {
+  stop("Amazon file was not found inside the downloaded UCI ZIP archive.")
+}
+
+amazon_lines <- readLines(unz(zip_path, amazon_file), warn = FALSE, encoding = "UTF-8")
+reviews <- tibble(raw = amazon_lines) %>%
+  separate_wider_delim(raw, delim = "\t", names = c("review", "label")) %>%
+  mutate(
+    review_id = row_number(),
+    label = as.integer(label),
+    actual = if_else(label == 1L, "positive", "negative")
+  ) %>%
+  select(review_id, review, label, actual)
+
+stopifnot(nrow(reviews) == 1000L, all(reviews$label %in% c(0L, 1L)))
+reviews %>% count(actual)
+reviews %>% slice_head(n = 6)
+```
+
+### Tokenize reviews
+
+`unnest_tokens()` converts reviews to individual lowercase words for the Bing, AFINN, and Loughran dictionaries. The review identifier was kept so each word can be traced back to its original sentence.
+
+```{r}
+review_words <- reviews %>%
+  select(review_id, review) %>%
+  unnest_tokens(word, review)
+
+review_words %>% count(word, sort = TRUE) %>% slice_head(n = 12)
+```
+
+### Additional lexicon: Loughran
+
+The Loughran-McDonald lexicon was developed for financial language and is available through `tidytext::get_sentiments("loughran")`. It is intentionally a different domain from consumer product reviews.Only its positive and negative categories were used to compare directly with Bing; other categories are not treated as positive or negative. This comparison helps illustrate why a dictionary's domain matters.
+
+```{r}
+loughran <- get_sentiments("loughran") %>%
+  filter(sentiment %in% c("positive", "negative"))
+loughran %>% count(sentiment)
+```
+
+### Score each review using three lexicons
+
+Bing and Loughran use positive minus negative word counts. AFINN sums signed word scores. A zero score means no net polarity, which may reflect no matched words or cancellation of positive and negative words. Such reviews were labeled neutral and count them as incorrect in binary accuracy calculations rather than silently removing them.
+
+```{r}
+score_polarity <- function(tokens, lexicon, method) {
+  tokens %>%
+    inner_join(lexicon, by = "word") %>%
+    mutate(word_score = if_else(sentiment == "positive", 1, -1)) %>%
+    group_by(review_id) %>%
+    summarise(score = sum(word_score), .groups = "drop") %>%
+    right_join(reviews %>% select(review_id), by = "review_id") %>%
+    mutate(score = replace_na(score, 0), method = method)
+}
+
+bing_scores <- score_polarity(review_words, bing, "Bing")
+loughran_scores <- score_polarity(review_words, loughran, "Loughran")
+
+afinn_scores <- review_words %>%
+  inner_join(afinn, by = "word") %>%
+  group_by(review_id) %>%
+  summarise(score = sum(value), .groups = "drop") %>%
+  right_join(reviews %>% select(review_id), by = "review_id") %>%
+  mutate(score = replace_na(score, 0), method = "AFINN")
+
+all_scores <- bind_rows(bing_scores, afinn_scores, loughran_scores) %>%
+  left_join(reviews %>% select(review_id, actual, review), by = "review_id") %>%
+  mutate(predicted = case_when(
+    score > 0 ~ "positive",
+    score < 0 ~ "negative",
+    TRUE ~ "neutral"
+  ))
+
+all_scores %>% count(method, predicted)
+```
+
+### Visualize the score distributions
+
+The scores are on different scales, so I chose to display the three methods in separate panels with independent x-axes, grouped by the known positive and negative labels.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+ggplot(all_scores, aes(x = score, fill = actual)) +
+  geom_histogram(binwidth = 1, position = "identity", alpha = 0.55) +
+  facet_wrap(~method, scales = "free_x", ncol = 1) +
+  labs(title = "Review sentiment scores by lexicon and actual label",
+       x = "Lexicon score (different scales)", y = "Review count", fill = "Actual label") +
+  theme_minimal()
+```
+
+### Compare predictions with known labels
+
+Accuracy is the proportion of all 1,000 reviews classified correctly. Coverage is the proportion receiving a non-neutral prediction. I also calculated accuracy among classified reviews to distinguish low dictionary coverage from wrong polarity.
+
+```{r}
+metrics <- all_scores %>%
+  group_by(method) %>%
+  summarise(
+    total = n(),
+    correct = sum(predicted == actual),
+    neutral = sum(predicted == "neutral"),
+    coverage = mean(predicted != "neutral"),
+    accuracy = mean(predicted == actual),
+    accuracy_classified = if (sum(predicted != "neutral") > 0)
+      mean(predicted[predicted != "neutral"] == actual[predicted != "neutral"])
+    else NA_real_,
+    .groups = "drop"
+  )
+metrics
+```
+
+```{r}
+#| fig-width: 8
+#| fig-height: 4.5
+metrics %>%
+  ggplot(aes(x = reorder(method, accuracy), y = accuracy, fill = method)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = scales::percent(accuracy, accuracy = 0.1)), hjust = -0.15) +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+  labs(title = "Accuracy on 1,000 labeled Amazon review sentences",
+       subtitle = "Neutral predictions count as incorrect", x = NULL, y = "Accuracy") +
+  theme_minimal()
+```
+
+```{r}
+confusion <- all_scores %>%
+  count(method, actual, predicted) %>%
+  complete(method, actual, predicted = c("negative", "neutral", "positive"), fill = list(n = 0))
+confusion
+```
+
+### Examples where dictionaries disagree
+
+```{r}
+disagreements <- all_scores %>%
+  select(review_id, method, predicted) %>%
+  pivot_wider(names_from = method, values_from = predicted) %>%
+  filter(Bing != AFINN | Bing != Loughran | AFINN != Loughran) %>%
+  left_join(reviews, by = "review_id") %>%
+  select(review_id, review, actual, Bing, AFINN, Loughran)
+
+disagreements %>% slice_head(n = 12)
+```
+
+## Comparison and Discussion
+
+The original analysis uses long-form fiction and evaluates sentiment *within* a narrative: 80-line bins reveal changes in positive and negative language as the story progresses. In contrast, this extension treats each product-review sentence as an independent observation and compares predictions with existing labels. These tasks cannot be compared using the same numerical scale: the Austen plots measure raw word-count differences across sections, while the review analysis reports per-sentence predictions and classification accuracy.
+
+```{r results='asis'}
+best <- metrics %>% arrange(desc(accuracy), desc(coverage)) %>% slice(1)
+cat(sprintf("In the Amazon dataset, **%s** had the highest measured accuracy (%.1f%%), with %.1f%% coverage. ",
+            best$method, 100 * best$accuracy, 100 * best$coverage))
+cat("The ranking is specific to this balanced set of short Amazon sentences and should not be generalized to all customer reviews.\n\n")
+for (i in seq_len(nrow(metrics))) {
+  x <- metrics[i, ]
+  cat(sprintf("- **%s:** %.1f%% accuracy, %.1f%% coverage, and %d neutral predictions.\n",
+              x$method, 100 * x$accuracy, 100 * x$coverage, x$neutral))
+}
+```
+
+The differences are expected because each lexicon has a different vocabulary and scoring method. Bing counts positive and negative terms equally; AFINN incorporates word intensity; Loughran was developed for financial documents and may omit everyday product-review vocabulary. None of these simple word-level approaches reliably interprets sarcasm, negation, or context. For example, "not good" can be scored incorrectly if "good" is treated as positive without considering "not." The gold-standard labels are also sentence-level annotations, not necessarily labels for full customer reviews.
+
+## Conclusion
+
+Reproducing the Jane Austen example demonstrates how tidy text data and dictionary joins can uncover sentiment patterns across a literary narrative. Extending the analysis to Amazon reviews demonstrates a different use case: evaluating sentiment classification against human-provided labels. The additional Loughran lexicon provides a domain-specific contrast and shows that sentiment results depend on the words and scoring rules in each dictionary. The comparison illustrates why lexicon selection and coverage matter as much as the resulting score.
+
+## References
+
+Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*. O'Reilly Media. Chapter 2: https://www.tidytextmining.com/sentiment
+
+Kotzias, D., Denil, M., de Freitas, N., & Smyth, P. (2015). From group to individual labels using deep features. *Proceedings of KDD 2015*. Dataset: *Sentiment Labelled Sentences*, UCI Machine Learning Repository. https://doi.org/10.24432/C57604
+
+Loughran, T., & McDonald, B. (2011). When is a liability not a liability? Textual analysis, dictionaries, and 10-Ks. *The Journal of Finance, 66*(1), 35–65. https://doi.org/10.1111/j.1540-6261.2010.01625.x
+
+Hutto, C. J., & Gilbert, E. (2014). VADER: A parsimonious rule-based model for sentiment analysis of social media text. *Proceedings of ICWSM*. (Background alternative; not implemented in this report.)

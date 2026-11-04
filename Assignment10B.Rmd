@@ -1,18 +1,857 @@
 ---
-title: "Assignment10B"
+title: "Assignment 10B: More JSON Practice"
+subtitle: "Exploring Nobel Prize Data Using JSON and R"
 author: "Zaina Hassan"
-output:
-  pdf_document: default
-  html_document: default
+date: "2026-11-03"
 ---
 
-For this assignment, I plan to use the Nobel Prize organization's publicly available APIs to explore historical trends and patterns among Nobel Prize laureates. I will retrieve the data in JSON format and use R packages such as `httr`, `jsonlite`, `dplyr`, `tidyr`, and `ggplot2` to extract, clean, transform, and visualize the information.
+## Introduction
 
-My analysis will focus on four questions:
+The Nobel Prize recognizes individuals and organizations for significant contributions to science, literature, peace, and economics. Since 1901, these awards have provided historical information about achievements across different fields.
 
-1. **Which Nobel Prize categories have awarded the most prizes?** I will compare the number of prizes awarded across categories to identify differences in their historical distributions.
-2. **How has the number of Nobel Prizes awarded changed over time?** I will examine annual trends and visualize how prize distributions have evolved.
-3. **What is the gender distribution of Nobel laureates across different prize categories?** I will compare the representation of male and female laureates across categories using percentages rather than only counts.
-4. **Which countries have produced the most Nobel laureates, and how do their birth countries compare with their affiliations at the time of receiving the award?** This question will involve combining and comparing fields across the JSON data to explore geographic patterns and potential differences between birthplace and institutional affiliation.
+For this assignment, I will use the Nobel Prize organization's public API to retrieve JSON data and investigate four questions about prize categories, historical trends, gender representation, and geographic patterns.
 
-I plan to transform the nested JSON structures into tidy data frames, address missing or inconsistent values, and use appropriate tables and visualizations to answer each question. My goal is to demonstrate how JSON data can be retrieved and transformed in R while identifying meaningful historical, demographic, and geographic trends in Nobel Prize awards.
+My analysis will use R to retrieve, clean, transform, and visualize the data.
+
+## Approach
+
+I plan to retrieve Nobel Prize data using the organization's publicly available API. I will use `httr` to send API requests, `jsonlite` to parse the JSON responses, and `dplyr`, `tidyr`, and `purrr` to organize the nested information into tidy data frames. I will also use `ggplot2` to create visualizations.
+
+The analysis will address four questions:
+
+1. Which Nobel Prize categories have awarded the most prizes?
+2. How has the number of Nobel Prizes awarded changed over time?
+3. What is the gender distribution of Nobel laureates across different prize categories?
+4. Which countries have produced the most Nobel laureates, and how do their birth countries compare with their institutional affiliations at the time of receiving the award?
+
+The fourth question will involve joining and comparing data from different nested fields. I will also account for missing values and multiple affiliations when preparing the data.
+
+## Load Required Packages
+
+```{r}
+# httr: Send HTTP requests to the Nobel Prize API
+library(httr)
+
+# jsonlite: Parse JSON data into R objects
+library(jsonlite)
+
+# dplyr: Filter, group, summarize, and join data
+library(dplyr)
+
+# tidyr: Organize nested data into tidy structures
+library(tidyr)
+
+# purrr: Iterate through nested JSON lists
+library(purrr)
+
+# ggplot2: Create data visualizations
+library(ggplot2)
+
+# tibble: Create tidy data frames
+library(tibble)
+
+# knitr: Display formatted tables
+library(knitr)
+```
+
+## Retrieve Nobel Prize JSON Data
+
+The Nobel Prize API provides information about laureates, including their names, gender, birthplaces, award years, prize categories, and institutional affiliations.
+
+I will use version 2.1 of the API and retrieve the data in batches to account for pagination.
+
+```{r}
+# Nobel Prize API endpoint
+base_url <- "https://api.nobelprize.org/2.1/laureates"
+
+# Function to retrieve one batch of laureates
+get_laureates <- function(offset, limit = 100) {
+
+  response <- GET(
+    base_url,
+    query = list(
+      offset = offset,
+      limit = limit
+    )
+  )
+
+  stop_for_status(response)
+
+  json_text <- content(
+    response,
+    as = "text",
+    encoding = "UTF-8"
+  )
+
+  fromJSON(
+    json_text,
+    simplifyVector = FALSE
+  )
+}
+
+# Retrieve all available laureates
+all_laureates <- list()
+
+offset <- 0
+batch_size <- 100
+
+repeat {
+
+  batch <- get_laureates(
+    offset = offset,
+    limit = batch_size
+  )
+
+  records <- batch$laureates
+
+  if (length(records) == 0) {
+    break
+  }
+
+  all_laureates <- c(
+    all_laureates,
+    records
+  )
+
+  if (length(records) < batch_size) {
+    break
+  }
+
+  offset <- offset + batch_size
+}
+
+# Check number of records retrieved
+length(all_laureates)
+```
+
+## Transform JSON into Tidy Data
+
+The JSON response contains nested lists for laureate information and Nobel Prize awards.
+
+To make the data easier to analyze, I will extract relevant fields and create separate data frames for laureates, awards, and institutional affiliations.
+
+### Extract Laureate Information
+
+```{r}
+# Safely extract English-language values
+get_english <- function(x) {
+
+  if (is.null(x) || is.null(x$en)) {
+    return(NA_character_)
+  }
+
+  as.character(x$en)
+}
+
+# Extract nested fields safely
+get_nested <- function(x, path) {
+
+  value <- x
+
+  for (field in path) {
+
+    if (is.null(value) || is.null(value[[field]])) {
+      return(NULL)
+    }
+
+    value <- value[[field]]
+  }
+
+  value
+}
+
+# Convert laureate records into a tidy data frame
+laureates_df <- map_dfr(
+  all_laureates,
+  function(person) {
+
+    tibble(
+      laureate_id = as.character(person$id),
+
+      name = get_english(
+        person$knownName
+      ),
+
+      gender = if (is.null(person$gender)) {
+        NA_character_
+      } else {
+        as.character(person$gender)
+      },
+
+      birth_country = get_english(
+        get_nested(
+          person,
+          c("birth", "place", "country")
+        )
+      )
+    )
+  }
+)
+
+# Remove duplicate laureates
+laureates_df <- laureates_df %>%
+  distinct(laureate_id, .keep_all = TRUE)
+
+# Preview data
+head(laureates_df)
+
+# Check structure
+glimpse(laureates_df)
+```
+
+### Extract Nobel Prize Awards
+
+A laureate can receive more than one Nobel Prize. Therefore, I will create a separate data frame containing one row per laureate-award combination.
+
+```{r}
+awards_df <- map_dfr(
+  all_laureates,
+  function(person) {
+
+    prizes <- person$nobelPrizes
+
+    if (is.null(prizes) || length(prizes) == 0) {
+      return(tibble())
+    }
+
+    map_dfr(
+      prizes,
+      function(prize) {
+
+        tibble(
+          laureate_id = as.character(person$id),
+
+          award_year = as.integer(
+            prize$awardYear
+          ),
+
+          category = get_english(
+            prize$category
+          )
+        )
+      }
+    )
+  }
+)
+
+# Remove duplicate award records
+awards_df <- awards_df %>%
+  distinct()
+
+# Join laureate information with awards
+nobel_data <- awards_df %>%
+  left_join(
+    laureates_df,
+    by = "laureate_id"
+  )
+
+# Preview combined data
+head(nobel_data)
+
+# Check missing values
+colSums(is.na(nobel_data))
+```
+
+### Extract Institutional Affiliations
+
+Institutional affiliations are nested within individual Nobel Prize records. Some laureates have multiple affiliations, while others have none listed.
+
+I will extract these affiliations separately so they can be compared with birth countries.
+
+```{r}
+affiliations_df <- map_dfr(
+  all_laureates,
+  function(person) {
+
+    prizes <- person$nobelPrizes
+
+    if (is.null(prizes) || length(prizes) == 0) {
+      return(tibble())
+    }
+
+    map_dfr(
+      prizes,
+      function(prize) {
+
+        affiliations <- prize$affiliations
+
+        if (is.null(affiliations) ||
+            length(affiliations) == 0) {
+          return(tibble())
+        }
+
+        map_dfr(
+          affiliations,
+          function(affiliation) {
+
+            tibble(
+              laureate_id = as.character(person$id),
+
+              award_year = as.integer(
+                prize$awardYear
+              ),
+
+              category = get_english(
+                prize$category
+              ),
+
+              affiliation_country = get_english(
+                affiliation$country
+              )
+            )
+          }
+        )
+      }
+    )
+  }
+)
+
+# Remove duplicate affiliation records
+affiliations_df <- affiliations_df %>%
+  distinct()
+
+# Preview
+head(affiliations_df)
+```
+
+## Question 1: Which Nobel Prize Categories Have Awarded the Most Prizes?
+
+For this question, I will count the number of prizes awarded in each category.
+
+Since multiple laureates can share a single prize, I will count unique combinations of award year and category rather than counting individual recipients.
+
+```{r}
+# Create one record per awarded prize
+prizes_df <- awards_df %>%
+  distinct(
+    award_year,
+    category
+  )
+
+# Count prizes by category
+category_counts <- prizes_df %>%
+  count(
+    category,
+    name = "total_prizes",
+    sort = TRUE
+  )
+
+# Display results
+kable(
+  category_counts,
+  caption = "Number of Nobel Prizes Awarded by Category"
+)
+```
+
+### Visualization
+
+```{r}
+#| fig-width: 9
+#| fig-height: 5
+
+ggplot(
+  category_counts,
+  aes(
+    x = reorder(category, total_prizes),
+    y = total_prizes,
+    fill = category
+  )
+) +
+  geom_col(
+    show.legend = FALSE
+  ) +
+  coord_flip() +
+  labs(
+    title = "Nobel Prizes Awarded by Category",
+    x = "Prize Category",
+    y = "Number of Prizes"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+### Answer
+
+```{r}
+top_category <- category_counts %>%
+  slice_max(
+    total_prizes,
+    n = 1,
+    with_ties = TRUE
+  )
+
+cat(
+  "The category or categories with the most awarded prizes:",
+  paste(top_category$category, collapse = ", "),
+  "\nNumber of prizes:",
+  top_category$total_prizes[1]
+)
+```
+
+Physics has received the highest number of Nobel Prizes, with 120 awards, followed closely by Literature (119), Chemistry (118), and Physiology or Medicine (117). The small differences between these categories suggest that prizes have been awarded relatively consistently across the original fields. Peace has received slightly fewer awards (107), while Economic Sciences has the lowest total (58), largely because it was introduced in 1969 rather than 1901.
+
+## Question 2: How Has the Number of Nobel Prizes Awarded Changed Over Time?
+
+For this question, I will examine how the number of prizes awarded has changed over time.
+
+I will group the data by award year and count the number of distinct prizes awarded each year.
+
+```{r}
+# Count prizes awarded each year
+yearly_prizes <- prizes_df %>%
+  count(
+    award_year,
+    name = "total_prizes"
+  ) %>%
+  arrange(award_year)
+
+# Display first observations
+head(yearly_prizes, 10)
+
+# Summary statistics
+summary(yearly_prizes$total_prizes)
+```
+
+### Visualization
+
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+ggplot(
+  yearly_prizes,
+  aes(
+    x = award_year,
+    y = total_prizes
+  )
+) +
+  geom_line(
+    color = "steelblue",
+    linewidth = 0.8
+  ) +
+  geom_point(
+    color = "darkblue",
+    size = 1.2
+  ) +
+  scale_y_continuous(
+    breaks = 0:6
+  ) +
+  labs(
+    title = "Nobel Prizes Awarded Over Time",
+    x = "Award Year",
+    y = "Number of Prizes"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+### Compare Prizes by Decade
+
+```{r}
+decade_summary <- prizes_df %>%
+  mutate(
+    decade = floor(award_year / 10) * 10
+  ) %>%
+  group_by(decade) %>%
+  summarise(
+    total_prizes = n(),
+    .groups = "drop"
+  )
+
+kable(
+  decade_summary,
+  caption = "Nobel Prizes Awarded by Decade"
+)
+```
+
+### Answer
+
+```{r}
+highest_year <- yearly_prizes %>%
+  slice_max(
+    total_prizes,
+    n = 1,
+    with_ties = TRUE
+  )
+
+cat(
+  "The highest annual number of prizes awarded was",
+  max(yearly_prizes$total_prizes),
+  "\nYears:",
+  paste(highest_year$award_year, collapse = ", ")
+)
+```
+
+The number of Nobel Prizes awarded annually has remained relatively consistent throughout history, although there were noticeable fluctuations during the earlier decades. Several years had fewer than five prizes awarded, particularly during periods of global conflict. Beginning in 1969, the introduction of Economic Sciences increased the number of available categories from five to six. Since then, six prizes have generally been awarded each year, with very few exceptions. The graph shows that the annual number of prizes has become more consistent over time.
+
+## Question 3: What Is the Gender Distribution of Nobel Laureates Across Prize Categories?
+
+For this question, I will compare gender representation across Nobel Prize categories.
+
+I will calculate both the number and percentage of male and female laureate-award records in each category.
+
+Organizations and records without a male or female gender classification will be excluded from this particular comparison.
+
+```{r}
+# Filter to individual laureates
+gender_data <- nobel_data %>%
+  filter(
+    gender %in% c("male", "female")
+  )
+
+# Calculate counts and percentages
+gender_summary <- gender_data %>%
+  count(
+    category,
+    gender,
+    name = "total"
+  ) %>%
+  group_by(category) %>%
+  mutate(
+    percentage = round(
+      total / sum(total) * 100,
+      2
+    )
+  ) %>%
+  ungroup()
+
+# Display table
+kable(
+  gender_summary,
+  caption = "Gender Distribution Across Nobel Prize Categories"
+)
+```
+
+### Visualization
+
+```{r}
+#| fig-width: 10
+#| fig-height: 5
+
+ggplot(
+  gender_summary,
+  aes(
+    x = category,
+    y = percentage,
+    fill = gender
+  )
+) +
+  geom_col(
+    position = "stack"
+  ) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c(
+      "female" = "#D87093",
+      "male" = "#4682B4"
+    )
+  ) +
+  labs(
+    title = "Gender Distribution Across Nobel Prize Categories",
+    x = "Prize Category",
+    y = "Percentage of Laureate Awards",
+    fill = "Gender"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+### Identify the Category With the Highest Female Representation
+
+```{r}
+female_representation <- gender_summary %>%
+  filter(
+    gender == "female"
+  ) %>%
+  arrange(
+    desc(percentage)
+  )
+
+kable(
+  female_representation,
+  caption = "Female Representation by Prize Category"
+)
+```
+
+### Answer
+
+```{r}
+top_female_category <- female_representation %>%
+  slice(1)
+
+cat(
+  "The category with the highest female representation is",
+  top_female_category$category,
+  "\nFemale representation:",
+  top_female_category$percentage,
+  "%"
+)
+```
+
+The results show a substantial gender imbalance across all Nobel Prize categories, with male laureates accounting for the majority of awards. Peace and Literature have the highest percentages of female recipients, while Physics and Economic Sciences have some of the lowest. Although women have received recognition across all six categories, their representation remains considerably lower than that of men. Using percentages rather than counts makes these differences easier to compare across categories with different numbers of recipients.
+
+## Question 4: Which Countries Have Produced the Most Nobel Laureates, and How Do Birth Countries Compare With Institutional Affiliations?
+
+For this question, I will investigate geographic patterns among Nobel laureates.
+
+First, I will identify the countries associated with the largest numbers of unique laureates by birthplace.
+
+Next, I will compare birth countries with the countries of institutional affiliations recorded at the time of an award.
+
+This analysis requires joining information from multiple nested JSON fields.
+
+### Part A: Most Common Birth Countries
+
+```{r}
+# Count unique laureates by birth country
+birth_country_summary <- laureates_df %>%
+  filter(
+    !is.na(birth_country),
+    birth_country != ""
+  ) %>%
+  count(
+    birth_country,
+    name = "total_laureates",
+    sort = TRUE
+  )
+
+# Display top 10 countries
+top_birth_countries <- birth_country_summary %>%
+  slice_head(n = 10)
+
+kable(
+  top_birth_countries,
+  caption = "Top 10 Birth Countries of Nobel Laureates"
+)
+```
+
+### Visualization
+
+```{r}
+#| fig-width: 10
+#| fig-height: 6
+
+ggplot(
+  top_birth_countries,
+  aes(
+    x = reorder(birth_country, total_laureates),
+    y = total_laureates
+  )
+) +
+  geom_col(
+    fill = "steelblue"
+  ) +
+  coord_flip() +
+  labs(
+    title = "Top 10 Birth Countries of Nobel Laureates",
+    x = "Birth Country",
+    y = "Number of Unique Laureates"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+### Part B: Compare Birth Countries and Affiliation Countries
+
+I will join the affiliation records with laureate birth-country information using the unique laureate ID.
+
+To avoid counting repeated institutional records, I will retain distinct combinations of laureate, award, and affiliation country.
+
+```{r}
+# Join birth country and affiliation information
+country_comparison <- affiliations_df %>%
+  left_join(
+    laureates_df %>%
+      select(
+        laureate_id,
+        name,
+        birth_country
+      ),
+    by = "laureate_id"
+  ) %>%
+  filter(
+    !is.na(birth_country),
+    !is.na(affiliation_country),
+    birth_country != "",
+    affiliation_country != ""
+  ) %>%
+  distinct(
+    laureate_id,
+    award_year,
+    category,
+    birth_country,
+    affiliation_country,
+    .keep_all = TRUE
+  )
+
+# Preview comparison data
+head(country_comparison)
+```
+
+### Identify Laureates With Different Birth and Affiliation Countries
+
+```{r}
+# Compare birthplace with institutional location
+different_countries <- country_comparison %>%
+  filter(
+    birth_country != affiliation_country
+  )
+
+# Count differences by birth country
+country_differences <- different_countries %>%
+  group_by(birth_country) %>%
+  summarise(
+    total_laureates = n_distinct(laureate_id),
+    .groups = "drop"
+  ) %>%
+  arrange(
+    desc(total_laureates)
+  )
+
+# Display top 10
+kable(
+  head(country_differences, 10),
+  caption = "Birth Countries With Laureates Affiliated Abroad"
+)
+```
+
+### Compare the Most Common Birth and Affiliation Countries
+
+```{r}
+# Count unique laureates by affiliation country
+affiliation_summary <- country_comparison %>%
+  group_by(affiliation_country) %>%
+  summarise(
+    total_laureates = n_distinct(laureate_id),
+    .groups = "drop"
+  ) %>%
+  arrange(
+    desc(total_laureates)
+  )
+
+# Display top 10
+kable(
+  head(affiliation_summary, 10),
+  caption = "Top 10 Institutional Affiliation Countries"
+)
+```
+
+### Visualization
+
+```{r}
+#| fig-width: 10
+#| fig-height: 6
+
+# Compare countries within records containing both fields
+birth_counts <- country_comparison %>%
+  group_by(birth_country) %>%
+  summarise(
+    total = n_distinct(laureate_id),
+    .groups = "drop"
+  ) %>%
+  rename(country = birth_country) %>%
+  mutate(type = "Birth Country")
+
+affiliation_counts <- affiliation_summary %>%
+  rename(
+    country = affiliation_country,
+    total = total_laureates
+  ) %>%
+  mutate(type = "Affiliation Country")
+
+# Combine summaries
+combined_countries <- bind_rows(
+  birth_counts,
+  affiliation_counts
+)
+
+# Select top countries by combined totals
+top_countries <- combined_countries %>%
+  group_by(country) %>%
+  summarise(
+    combined_total = sum(total),
+    .groups = "drop"
+  ) %>%
+  slice_max(
+    combined_total,
+    n = 10,
+    with_ties = FALSE
+  ) %>%
+  pull(country)
+
+# Plot comparison
+combined_countries %>%
+  filter(
+    country %in% top_countries
+  ) %>%
+  ggplot(
+    aes(
+      x = reorder(country, total),
+      y = total,
+      fill = type
+    )
+  ) +
+  geom_col(
+    position = "dodge"
+  ) +
+  coord_flip() +
+  labs(
+    title = "Birth Countries vs. Institutional Affiliation Countries",
+    x = "Country",
+    y = "Number of Unique Laureates",
+    fill = "Country Type"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+### Answer
+
+```{r}
+# Identify leading birth country
+top_birth_country <- birth_country_summary %>%
+  slice(1)
+
+# Identify leading affiliation country
+top_affiliation_country <- affiliation_summary %>%
+  slice(1)
+
+# Count unique laureates with differing countries
+total_different <- different_countries %>%
+  summarise(
+    total = n_distinct(laureate_id)
+  ) %>%
+  pull(total)
+
+cat(
+  "Country with the most Nobel laureates by birthplace:",
+  top_birth_country$birth_country,
+  "\nNumber of unique laureates:",
+  top_birth_country$total_laureates,
+  "\n\nCountry with the most laureates by institutional affiliation:",
+  top_affiliation_country$affiliation_country,
+  "\nNumber of unique laureates:",
+  top_affiliation_country$total_laureates,
+  "\n\nNumber of unique laureates with at least one affiliation",
+  "country different from their birth country:",
+  total_different
+)
+```
+
+This analysis compares the geographic origins of Nobel laureates with the locations of their institutional affiliations.
+
+The United States has produced the largest number of Nobel laureates by birthplace, followed by the United Kingdom, Germany, and France. When comparing birth countries with institutional affiliations, the United States also has the highest number of affiliated laureates, with a noticeably larger affiliation count than birth count. 
+
+This suggests that American institutions have attracted researchers and other Nobel laureates from different countries. Other countries, including the United Kingdom and Germany, show similar patterns, although the differences are smaller. The results highlight the international nature of Nobel Prize achievements and the importance of institutional affiliations in understanding geographic patterns. However, affiliation does not necessarily indicate citizenship or permanent migration.
+
+
+## Conclusion
+
+I used the Nobel Prize API to retrieve JSON data and analyze historical, demographic, and geographic patterns among Nobel Prize laureates. Using R packages such as httr, jsonlite, dplyr, tidyr, and ggplot2, I transformed nested JSON data into tidy data frames and created tables and visualizations to answer four questions.
+
+The results showed that Physics has received the most Nobel Prizes, although the original prize categories have relatively similar totals. The historical analysis also showed that the number of prizes awarded annually became more consistent following the introduction of Economic Sciences in 1969. Gender comparisons revealed that male laureates continue to account for the majority of awards across all categories, particularly in Physics and Economic Sciences. Finally, the geographic analysis showed that the United States leads in both laureate birthplaces and institutional affiliations, highlighting the international connections between researchers and the institutions where they work.
+
+One of the main challenges was working with nested JSON structures, particularly when extracting information about awards and institutional affiliations. Separating the data into multiple data frames and joining them using laureate IDs made the analysis more manageable. I also had to consider missing values and multiple affiliations to avoid misleading comparisons.
+
+## Data Source
+
+Nobel Prize Outreach. Nobel Prize API, Version 2.1.
+
+API endpoint: https://api.nobelprize.org/2.1/laureates
+
+Developer documentation: https://www.nobelprize.org/about/developer-zone-2/
