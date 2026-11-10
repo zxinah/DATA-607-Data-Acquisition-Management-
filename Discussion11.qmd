@@ -1,0 +1,126 @@
+---
+title: "Behind the Pins: An Analysis of Pinterest's Recommendation System"
+author: "Zaina Hassan"
+date: "2026-11-10"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+    code-fold: true
+    embed-resources: true
+execute:
+  echo: false
+---
+
+## Introduction
+
+Pinterest is a visual discovery platform where people find and organize ideas for fashion, recipes, home decoration, travel, and other interests. Its recommender system is central to the experience: rather than requiring a user to enter a new search every time, the home feed suggests Pins based on previous activity. Pinterest's own help documentation identifies saved Pins, engaged Pins, followed boards, and searches as inputs to feed personalization [1]. This report uses *scenario design* to consider both users' and Pinterest's needs, reconstructs the recommendation process from public engineering information, and proposes practical improvements.
+
+**Scope and method.** This is a qualitative analysis based on public product documentation and Pinterest Engineering articles, not an audit of Pinterest's source code or a controlled experiment with user accounts. Statements about documented systems are distinguished from hypotheses and recommendations.
+
+## Scenario Design: The User Perspective
+
+### 1. Who are the users?
+
+Pinterest serves people looking for visual inspiration and practical ideas. A user might be planning a wedding, looking for a dinner recipe, gathering outfit ideas, or exploring a new hobby. Users differ in their interests, experience with the platform, and how clearly they know what they want.
+
+### 2. What are their goals?
+
+Users want to discover useful, appealing, and relevant Pins without spending excessive time searching. They may also want to organize ideas into boards, compare alternatives, revisit saved content, and occasionally explore topics outside their usual interests. Relevance is contextual: someone searching for holiday decorations today may not want those recommendations dominating their feed next month.
+
+### 3. How can the system help?
+
+The recommender can infer interests from saves, searches, engagement, and boards; retrieve visually or behaviorally related Pins; and rank them for the home feed. It should balance familiar interests with new ideas, respect negative feedback, and let users correct outdated assumptions. Pinterest already supports feedback such as **See more like this**, **See fewer like this**, and recommendation settings [2, 3].
+
+## Scenario Design: Pinterest's Perspective
+
+### 1. Who are the organization's target users?
+
+Pinterest's direct audience includes people seeking inspiration and planning purchases or projects. The platform also serves creators, publishers, merchants, and advertisers who benefit when their content reaches relevant audiences. These groups have related but not identical objectives.
+
+### 2. What are the organization's goals?
+
+Pinterest benefits when people find the service useful, return regularly, save and explore Pins, and discover products or content that fit their needs. Advertising is also an important commercial consideration: Pinterest Engineering describes the home feed as both a major engagement surface and a revenue driver [4]. However, maximizing clicks alone could conflict with the user's desire for useful, varied inspiration.
+
+### 3. How can recommendations help the organization?
+
+Relevant recommendations can encourage repeat use, help new content find an audience, and improve discovery for businesses and creators. A successful system should optimize longer-term user satisfaction alongside engagement, content quality, and a healthy creator ecosystem. Pinterest's more recent engineering work explicitly discusses balancing short- and long-term outcomes and multiple objectives [5].
+
+| Design question | User perspective | Pinterest perspective |
+|---|---|---|
+| Who? | People exploring, planning, and saving ideas | Users, plus creators, merchants, and advertisers |
+| Goals? | Relevant inspiration, novelty, control, and efficient discovery | Retention, useful engagement, content discovery, and sustainable revenue |
+| How to help? | Personalized Pins, diverse suggestions, feedback controls | Reliable candidate retrieval, ranking, quality safeguards, and measurement |
+
+## Reverse Engineering the Recommender System
+
+### Observable interface and feedback signals
+
+Pinterest's home feed presents Pins selected using boards, followed accounts, interactions, and searches [1]. Users can open a Pin to explore related content, save Pins to boards, and express preferences with **See more** or **See fewer** actions [2]. Pinterest's recommendation settings also let users adjust activity-based recommendations and reduce some AI-generated content [3]. These controls indicate that the platform uses both implicit behavioral signals and explicit feedback.
+
+A **save** plausibly conveys stronger planning intent than a casual view, although the precise importance of each signal depends on the model and context. Pinterest's published risk assessment states that its recommender design prioritizes user actions such as saves [6].
+
+### Publicly documented technical approaches
+
+**Graph-based retrieval (Pixie).** Pinterest Engineering described Pixie as a recommendation engine built on a graph connecting Pins and boards. Starting from Pins relevant to a user, biased random walks discover nearby Pins likely to share interests [7]. This helps narrow an enormous content collection to promising candidates. The article documents a historical system; it should not be assumed to describe the entire current stack.
+
+**Multi-stage ranking.** More recent Pinterest Engineering publications describe a pipeline of candidate retrieval, lightweight scoring or pre-ranking, ranking, and re-ranking [5, 8]. Instead of deeply evaluating every Pin, early stages narrow the options so more expensive models can focus on a manageable subset.
+
+**User representations and multiple interests.** Pinterest has described PinnerSAGE, which groups a person's engaged Pins into interest clusters, allowing the system to retrieve content reflecting multiple interests [9]. Its 2026 work on conditional learned retrieval also addresses the challenge of representing multiple simultaneous intentions [10].
+
+**Multi-objective optimization.** Pinterest Engineering reports that its final feed decisions must consider more than immediate clicks, including longer-term engagement and other platform requirements [5]. Exact production model weights, complete feature sets, and live ranking rules are not publicly verifiable from the interface.
+
+### Conceptual recommendation pipeline
+
+```{mermaid}
+flowchart TD
+    A[User signals: saves, searches, views, feedback] --> B[User interests and context]
+    B --> C[Candidate retrieval: graphs and embeddings]
+    C --> D[Lightweight scoring]
+    D --> E[Detailed ranking]
+    E --> F[Re-ranking: diversity, quality, objectives]
+    F --> G[Personalized home feed]
+    G --> A
+```
+
+*Figure: Simplified conceptual reconstruction based on Pinterest Engineering articles [5, 7–10]; not a diagram of the complete proprietary implementation.*
+
+### Strengths and limitations
+
+Pinterest has several strengths: rich visual content, repeated signals from saves and boards, multiple candidate-generation strategies, and feedback tools that can refine the feed. Its recommendation challenges include **interest drift** (temporary searches affecting future recommendations), **filter bubbles** (too much similar content), **cold start** (limited data for new users or Pins), and balancing commercial goals with authentic discovery. These are analytical risks, not claims that Pinterest fails on every dimension.
+
+## Recommendations for Improvement
+
+### 1. Add a clearer temporary interest mode
+
+Users could mark an activity as a *one-time project* (for example, researching a birthday party) and select an expiration date. Pinterest already lets users adjust activity-based recommendations, but a temporary-interest mode would offer a more targeted way to avoid long-lived recommendations from short-lived searches. **Evaluation:** fewer reports of irrelevant recommendations after a project ends, without reducing saves of genuinely useful Pins.
+
+### 2. Offer an adjustable discovery vs familiarity control
+
+A simple feed control could let users request **More familiar ideas**, **Balanced**, or **Explore new topics**. Pinterest already uses diverse retrieval approaches; the proposal is to make the degree of exploration more directly user-controlled. **Evaluation:** topic diversity, saves per session, and user-rated discovery satisfaction, monitored alongside retention.
+
+### 3. Make recommendation explanations more actionable
+
+Pinterest already provides a reason for why a Pin appears in the feed [2]. Improve that feature by letting users act directly on the reason: for example, “Recommended because of your Kitchen Ideas board — reduce recommendations from this board for 30 days.” This is an extension of existing transparency, not a claim that explanations are absent. **Evaluation:** successful preference adjustments, reduction in repeated unwanted content, and user understanding.
+
+### 4. Measure value beyond immediate engagement
+
+A/B tests should include long-term indicators such as repeat visits, meaningful saves, diversity of creators surfaced, and explicit satisfaction surveys. Track guardrails such as low-quality content exposure and negative feedback. This is particularly important because a feed can generate clicks without helping someone complete a real-world project. **Evaluation:** compare treatment and control groups across short- and longer-term outcomes rather than declaring success from click-through rate alone.
+
+## Conclusion
+
+Pinterest demonstrates why recommendation design must begin with user needs. From a user's perspective, success means finding relevant and inspiring ideas while retaining control over what appears. From Pinterest's perspective, success also includes sustained engagement, a healthy content ecosystem, and business value. Public engineering articles show that Pinterest has used graph-based retrieval, interest representations, and multi-stage ranking to manage recommendations at scale. The proposed improvements—temporary-interest controls, adjustable exploration, more actionable explanations, and broader evaluation metrics would build on existing capabilities while prioritizing usefulness over engagement alone.
+
+## References
+
+1. Pinterest Help. *Explore the home feed.* https://help.pinterest.com/en/article/explore-the-home-feed
+2. Pinterest Help. *See more or fewer recommended Pins.* https://help.pinterest.com/en/article/hide-a-pin-on-your-home-feed
+3. Pinterest Help. *Refine your recommendations.* https://help.pinterest.com/en/article/tune-your-home-feed
+4. Pinterest Engineering. (2020). *Multi-task Learning and Calibration for Utility-based Home Feed Ranking.* https://medium.com/pinterest-engineering/multi-task-learning-and-calibration-for-utility-based-home-feed-ranking-64087a7bcbad
+5. Pinterest Engineering. (2026). *Evolution of Multi-Objective Optimization at Pinterest Home feed.* https://medium.com/pinterest-engineering/evolution-of-multi-objective-optimization-at-pinterest-home-feed-06657e33cd10
+6. Pinterest. (2023). *DSA Risk Assessment and Mitigation Report.* https://help.pinterest.com/sites/default/files/dsa/Pinterest-DSA-Risk-Assessment-and-Mitigation-Report-Aug-25-2023.pdf
+7. Eksombatchai, P., & Ulrich, M. *Introducing Pixie, an advanced graph-based recommendation system.* Pinterest Engineering. https://medium.com/pinterest-engineering/introducing-pixie-an-advanced-graph-based-recommendation-system-e7b4229b664b
+8. Pinterest Engineering. (2025). *Modernizing Home Feed Pre-Ranking Stage.* https://medium.com/pinterest-engineering/modernizing-home-feed-pre-ranking-stage-e636c9cdc36b
+9. Pinterest Engineering. (2022). *Query Rewards: Building a Recommendation Feedback Loop During Query Selection.* https://medium.com/pinterest-engineering/query-rewards-building-a-recommendation-feedback-loop-during-query-selection-70b4d20e5ea0
+10. Pinterest Engineering. (2026). *Scaling Conditional Learned Retrieval for Pinterest Home Feed.* https://medium.com/pinterest-engineering/scaling-conditional-learned-retrieval-for-pinterest-home-feed-ecfba7e5a426
