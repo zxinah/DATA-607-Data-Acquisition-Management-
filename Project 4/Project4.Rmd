@@ -1,0 +1,707 @@
+---
+title: "Project4"
+author: "Zaina Hassan"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Approach
+
+For this project, I plan to build a classification model that can determine whether an email is spam or ham (not spam) based on its content. I will be using the Apache SpamAssassin Public Corpust, which contains a collection of emails that have already been classified. I chose this dataset because it provides a good opportunity to explore how text data can be processed and used to make predictions, especially for something as common as identifying unwanted emails.
+
+I will begin by downloading and importing the dataset into R, then exploring its structure to get a better understanding of how the emails are stored and labeled. Since email data can contain a lot of unnecessary information, such as headers, punctuation, special characters, and formatting, I will need to clean the text before using it for classification. I plan to use packages like `tidyverse`, `tidytext`, and `dplyr` to organize the data, break the email content into individual words, convert everything to lowercase, and remove common stop words that may not contribute much to identifying spam. I also want to look at the most frequently used words in spam vs ham emails to see whether there are any noticeable differences between the two groups.
+
+After cleaning and preparing the data, I will divide the emails into training and testing sets, with approximately 80% used for training and the remaining 20% reserved for testing. This will allow me to train the model using emails with known classifications and then evaluate how well it performs on emails it has never seen before. I plan to use a Naive Bayes classifier because it is commonly used for text classification and works by estimating the probability that an email belongs to a particular category based on the words it contains. I think this will be a good starting point for understanding how machine learning algorithms recognize patterns in text.
+
+Once the model has been trained, I will use it to predict whether the emails in the testing set are spam or ham. I will compare these predictions with their actual classifications to determine how accurately the model performs. Rather than relying only on overall accuracy, I also plan to calculate precision, recall, and F1 score, along with a confusion matrix. These measurements will help me understand the types of mistakes the model makes, particularly when a legitimate email is incorrectly classified as spam or when a spam email is missed.
+
+# Introduction
+
+Email spam detection is a common application of text mining and machine learning. Spam emails may contain advertisements, scams, or unwanted messages, while ham emails are legitimate messages. Being able to automatically distinguish between these categories can help reduce unwanted emails and improve email organization.
+
+Using the Apache SpamAssassin Public Corpus I will build a classification model that predicts whether an email is spam or ham based on its text content. I will clean and explore the email data, train a Naive Bayes classifier, and evaluate its performance using a separate testing dataset.
+
+# 1. Load Required Packages
+
+```{r setup, message=FALSE, warning=FALSE}
+packages <- c("tidyverse", "tidytext", "Matrix", "knitr")
+
+new_packages <- packages[
+  !packages %in% rownames(installed.packages())
+]
+
+if (length(new_packages) > 0) {
+  install.packages(new_packages)
+}
+
+library(tidyverse)
+library(tidytext)
+library(Matrix)
+library(knitr)
+
+set.seed(607)
+```
+
+The `tidyverse` package will be used for data manipulation and visualization, while `tidytext` will help convert email messages into individual words. The `Matrix` package will allow me to work efficiently with the large number of word features used by the classification model.
+
+# 2. Download and Import the Dataset
+
+The dataset comes from the Apache SpamAssassin Public Corpus. I will use two collections: `easy_ham`, containing legitimate emails, and `spam`, containing unwanted emails.
+
+Source: https://spamassassin.apache.org/old/publiccorpus/
+
+```{r download-data}
+# Create a folder for the dataset
+dir.create("spam_data", showWarnings = FALSE)
+
+base_url <- "https://spamassassin.apache.org/old/publiccorpus/"
+
+files <- c(
+  "20030228_easy_ham.tar.bz2",
+  "20030228_spam.tar.bz2"
+)
+
+# Download and extract both collections
+for (file in files) {
+
+  destination <- file.path("spam_data", file)
+
+  if (!file.exists(destination)) {
+    download.file(
+      paste0(base_url, file),
+      destination,
+      mode = "wb"
+    )
+  }
+
+  folder <- if (grepl("easy_ham", file)) {
+    "easy_ham"
+  } else {
+    "spam"
+  }
+
+  if (!dir.exists(file.path("spam_data", folder))) {
+    untar(destination, exdir = "spam_data")
+  }
+}
+```
+
+## Read Email Files
+
+Each email is stored as a separate text file. I will extract the email body and assign its classification based on the folder it came from.
+
+```{r read-emails}
+# Function to read and clean email files
+read_email <- function(path) {
+
+  # Read email using Latin-1 encoding
+  lines <- readLines(
+    path,
+    warn = FALSE,
+    encoding = "latin1"
+  )
+
+  # Convert text 
+  lines <- iconv(
+    lines,
+    from = "latin1",
+    to = "UTF-8",
+    sub = ""
+  )
+
+  # Find the blank line separating headers and body
+  blank_line <- which(lines == "")[1]
+
+  if (!is.na(blank_line) && blank_line < length(lines)) {
+    lines <- lines[(blank_line + 1):length(lines)]
+  }
+
+  # Combine email body into one string
+  paste(lines, collapse = " ")
+}
+
+# Identify email files
+ham_files <- list.files(
+  "spam_data/easy_ham",
+  full.names = TRUE
+)
+
+spam_files <- list.files(
+  "spam_data/spam",
+  full.names = TRUE
+)
+
+# Exclude non-email files
+ham_files <- ham_files[basename(ham_files) != "cmds"]
+spam_files <- spam_files[basename(spam_files) != "cmds"]
+
+# Create the dataset
+emails <- tibble(
+  email_id = seq_len(length(ham_files) + length(spam_files)),
+  text = c(
+    vapply(ham_files, read_email, character(1)),
+    vapply(spam_files, read_email, character(1))
+  ),
+  label = c(
+    rep("ham", length(ham_files)),
+    rep("spam", length(spam_files))
+  )
+)
+
+# Remove empty emails
+emails <- emails %>%
+  filter(nchar(trimws(text)) > 0) %>%
+  mutate(
+    label = factor(label, levels = c("ham", "spam"))
+  )
+
+glimpse(emails)
+```
+
+# 3. Exploratory Data Analysis
+
+Before building the classification model, I want to understand how many emails belong to each category and whether the two groups have similar characteristics.
+
+## Spam vs. Ham Distribution
+
+```{r class-distribution}
+class_counts <- emails %>%
+  count(label) %>%
+  mutate(
+    percentage = round(n / sum(n) * 100, 1)
+  )
+
+kable(class_counts)
+```
+
+```{r class-plot, fig.width=7, fig.height=4}
+ggplot(class_counts, aes(x = label, y = n, fill = label)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = n), vjust = -0.5) +
+  scale_fill_manual(
+    values = c("ham" = "steelblue", "spam" = "tomato")
+  ) +
+  labs(
+    title = "Distribution of Spam and Ham Emails",
+    x = "Email Classification",
+    y = "Number of Emails"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+This graph shows the number of legitimate and spam emails in the dataset. Understanding the class distribution is important because an imbalanced dataset can affect how a classification model performs.
+
+## Email Length
+
+I will also compare the lengths of spam and ham emails to see whether there are noticeable differences.
+
+```{r email-length}
+emails <- emails %>%
+  mutate(
+    character_count = nchar(text),
+    word_count = str_count(text, "\\S+")
+  )
+
+length_summary <- emails %>%
+  group_by(label) %>%
+  summarise(
+    mean_words = round(mean(word_count), 1),
+    median_words = median(word_count),
+    mean_characters = round(mean(character_count), 1),
+    .groups = "drop"
+  )
+
+kable(length_summary)
+```
+
+```{r length-plot, fig.width=7, fig.height=4}
+ggplot(emails, aes(x = label, y = word_count, fill = label)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  coord_cartesian(ylim = c(0, 1500)) +
+  scale_fill_manual(
+    values = c("ham" = "steelblue", "spam" = "tomato")
+  ) +
+  labs(
+    title = "Email Length by Classification",
+    x = "Email Classification",
+    y = "Number of Words"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+# 4. Split Training and Testing Data
+
+I will use approximately 80% of the emails for training and reserve the remaining 20% for testing. I will split the emails within each category so that both datasets contain spam and ham messages.
+
+```{r split-data}
+# Randomly select 80% of each category for training
+train_ids <- emails %>%
+  group_by(label) %>%
+  slice_sample(prop = 0.80) %>%
+  ungroup() %>%
+  pull(email_id)
+
+train_data <- emails %>%
+  filter(email_id %in% train_ids)
+
+test_data <- emails %>%
+  filter(!email_id %in% train_ids)
+
+# Check the split
+split_summary <- bind_rows(
+  train_data %>% count(label) %>% mutate(dataset = "Training"),
+  test_data %>% count(label) %>% mutate(dataset = "Testing")
+)
+
+kable(split_summary)
+```
+
+Keeping the testing data separate will allow me to evaluate how well the model classifies emails it has not seen during training.
+
+# 5. Text Cleaning and Preprocessing
+
+Email messages contain punctuation, numbers, URLs, HTML tags, and common words that may not be useful for classification. I will clean the text and convert it into individual words.
+
+To avoid data leakage, I will create the model's vocabulary using only the training emails.
+
+```{r clean-text}
+# Function for cleaning email text
+clean_text <- function(text) {
+
+  text %>%
+    str_to_lower() %>%
+    str_replace_all("<[^>]+>", " ") %>%
+    str_replace_all("https?://\\S+|www\\.\\S+", " ") %>%
+    str_replace_all("[^a-z\\s]", " ") %>%
+    str_squish()
+}
+
+train_data <- train_data %>%
+  mutate(clean_text = clean_text(text))
+
+test_data <- test_data %>%
+  mutate(clean_text = clean_text(text))
+
+# Tokenize training emails
+train_tokens <- train_data %>%
+  select(email_id, label, clean_text) %>%
+  unnest_tokens(word, clean_text) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(nchar(word) > 2)
+
+# Tokenize testing emails
+test_tokens <- test_data %>%
+  select(email_id, label, clean_text) %>%
+  unnest_tokens(word, clean_text) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(nchar(word) > 2)
+
+head(train_tokens, 10)
+```
+
+# 6. Most Common Words in Spam and Ham
+
+I will examine the words that appear most frequently in each category. This can help identify differences in language between legitimate and unwanted emails.
+
+```{r common-words}
+word_counts <- train_tokens %>%
+  count(label, word, sort = TRUE)
+
+top_words <- word_counts %>%
+  group_by(label) %>%
+  slice_max(n, n = 10, with_ties = FALSE) %>%
+  ungroup()
+
+kable(top_words)
+```
+
+```{r common-words-plot, fig.width=9, fig.height=6}
+top_words %>%
+  mutate(word = reorder_within(word, n, label)) %>%
+  ggplot(aes(x = n, y = word, fill = label)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~label, scales = "free") +
+  scale_y_reordered() +
+  scale_fill_manual(
+    values = c("ham" = "steelblue", "spam" = "tomato")
+  ) +
+  labs(
+    title = "Most Frequent Words in Spam and Ham Emails",
+    x = "Word Frequency",
+    y = "Word"
+  ) +
+  theme_minimal()
+```
+
+These visualizations will help me compare the vocabulary used in the two categories. However, a word appearing frequently does not necessarily mean it is a strong predictor of spam.
+
+# 7. Prepare Features for Classification
+
+Machine learning algorithms cannot directly interpret raw email text. I will convert the cleaned emails into a document-term matrix, where each row represents an email and each column represents a word.
+
+I will use word counts as features for the Multinomial Naive Bayes classifier.
+
+```{r create-features}
+# Count word occurrences in training emails
+train_word_counts <- train_tokens %>%
+  count(email_id, word)
+
+# Keep words that appear at least 3 times in training
+vocabulary <- train_word_counts %>%
+  group_by(word) %>%
+  summarise(total = sum(n), .groups = "drop") %>%
+  filter(total >= 3) %>%
+  pull(word)
+
+# Function to create a sparse document-term matrix
+make_dtm <- function(word_counts, email_ids, vocabulary) {
+
+  word_counts <- word_counts %>%
+    filter(word %in% vocabulary)
+
+  sparseMatrix(
+    i = match(word_counts$email_id, email_ids),
+    j = match(word_counts$word, vocabulary),
+    x = as.numeric(word_counts$n),
+    dims = c(length(email_ids), length(vocabulary)),
+    dimnames = list(
+      as.character(email_ids),
+      vocabulary
+    )
+  )
+}
+
+# Training matrix
+x_train <- make_dtm(
+  train_word_counts,
+  train_data$email_id,
+  vocabulary
+)
+
+# Testing matrix
+test_word_counts <- test_tokens %>%
+  count(email_id, word)
+
+x_test <- make_dtm(
+  test_word_counts,
+  test_data$email_id,
+  vocabulary
+)
+
+dim(x_train)
+dim(x_test)
+```
+
+The two matrices contain the same word features, but the training and testing emails remain separate.
+
+# 8. Train the Naive Bayes Classifier
+
+I will use Multinomial Naive Bayes, which estimates the probability of an email belonging to a category based on the words it contains.
+
+I will also apply Laplace smoothing to prevent words with zero occurrences in a category from producing zero probabilities.
+
+```{r train-model}
+# Define the classes
+classes <- c("ham", "spam")
+
+# Calculate prior probabilities
+class_priors <- prop.table(
+  table(factor(train_data$label, levels = classes))
+)
+
+# Calculate word frequencies for each class
+word_frequencies <- sapply(classes, function(class_name) {
+
+  rows <- train_data$label == class_name
+
+  Matrix::colSums(x_train[rows, , drop = FALSE])
+})
+
+# Laplace smoothing
+alpha <- 1
+
+word_probabilities <- sweep(
+  word_frequencies + alpha,
+  2,
+  colSums(word_frequencies) + alpha * nrow(word_frequencies),
+  "/"
+)
+
+# Log probabilities
+log_word_probabilities <- log(word_probabilities)
+
+# Prediction function
+predict_nb <- function(x) {
+
+  scores <- as.matrix(
+    x %*% log_word_probabilities
+  )
+
+  scores <- sweep(
+    scores,
+    2,
+    log(as.numeric(class_priors)),
+    "+"
+  )
+
+  factor(
+    classes[max.col(scores)],
+    levels = classes
+  )
+}
+
+cat("Naive Bayes model trained successfully.\n")
+cat("Number of word features:", length(vocabulary))
+```
+
+# 9. Predict Spam and Ham Emails
+
+Now I will use the trained model to classify emails from the testing dataset.
+
+```{r predictions}
+# Predict classifications
+test_predictions <- predict_nb(x_test)
+
+# Compare actual and predicted labels
+results <- test_data %>%
+  select(email_id, label) %>%
+  mutate(
+    predicted = test_predictions,
+    correct = label == predicted
+  )
+
+head(results, 10)
+```
+
+# 10. Evaluate Model Performance
+
+To evaluate the model, I will calculate accuracy, precision, recall, and F1-score.
+
+Accuracy measures the overall proportion of correct predictions. Precision measures how many emails predicted as spam were actually spam. Recall measures how many actual spam emails were successfully detected. F1-score balances precision and recall.
+
+## Confusion Matrix
+
+```{r confusion-matrix}
+confusion <- table(
+  Actual = results$label,
+  Predicted = results$predicted
+)
+
+confusion
+```
+
+```{r evaluation-metrics}
+# Extract confusion matrix values
+TP <- confusion["spam", "spam"]
+TN <- confusion["ham", "ham"]
+FP <- confusion["ham", "spam"]
+FN <- confusion["spam", "ham"]
+
+# Calculate metrics
+accuracy <- (TP + TN) / sum(confusion)
+
+precision <- if ((TP + FP) == 0) {
+  0
+} else {
+  TP / (TP + FP)
+}
+
+recall <- if ((TP + FN) == 0) {
+  0
+} else {
+  TP / (TP + FN)
+}
+
+f1_score <- if ((precision + recall) == 0) {
+  0
+} else {
+  2 * precision * recall / (precision + recall)
+}
+
+metrics <- tibble(
+  Metric = c("Accuracy", "Precision", "Recall", "F1-Score"),
+  Score = c(accuracy, precision, recall, f1_score)
+)
+
+kable(
+  metrics,
+  digits = 4,
+  caption = "Naive Bayes Classification Performance"
+)
+```
+
+## Performance Visualization
+
+```{r metrics-plot, fig.width=7, fig.height=4}
+ggplot(metrics, aes(x = Metric, y = Score, fill = Metric)) +
+  geom_col(width = 0.65, show.legend = FALSE) +
+  geom_text(
+    aes(label = sprintf("%.3f", Score)),
+    vjust = -0.5
+  ) +
+  scale_y_continuous(limits = c(0, 1.1)) +
+  labs(
+    title = "Spam Classification Model Performance",
+    x = NULL,
+    y = "Score"
+  ) +
+  theme_minimal()
+```
+
+## Confusion Matrix Heatmap
+
+```{r confusion-plot, fig.width=6, fig.height=5}
+confusion_df <- as.data.frame(confusion)
+
+ggplot(
+  confusion_df,
+  aes(x = Predicted, y = Actual, fill = Freq)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 6) +
+  scale_fill_gradient(
+    low = "white",
+    high = "steelblue"
+  ) +
+  labs(
+    title = "Confusion Matrix",
+    x = "Predicted Classification",
+    y = "Actual Classification",
+    fill = "Count"
+  ) +
+  theme_minimal()
+```
+
+# 11. Examine Classification Errors
+
+I also want to examine the mistakes made by the classifier. A false positive occurs when a legitimate email is incorrectly labeled as spam, while a false negative occurs when a spam email is incorrectly labeled as ham.
+
+```{r classification-errors}
+error_summary <- tibble(
+  Error_Type = c(
+    "False Positives",
+    "False Negatives",
+    "Correct Predictions"
+  ),
+  Count = c(
+    as.numeric(FP),
+    as.numeric(FN),
+    as.numeric(TP + TN)
+  )
+)
+
+kable(error_summary)
+```
+
+```{r error-examples}
+# Show incorrectly classified emails
+misclassified <- results %>%
+  filter(!correct) %>%
+  left_join(
+    test_data %>% select(email_id, clean_text),
+    by = "email_id"
+  ) %>%
+  mutate(
+    preview = str_sub(clean_text, 1, 150)
+  ) %>%
+  select(email_id, label, predicted, preview)
+
+kable(head(misclassified, 5))
+```
+
+Looking at these errors can help explain where the model struggles and whether certain words or message formats lead to incorrect predictions.
+
+# 12. Test the Model on New Emails
+
+To demonstrate how the classifier works on new documents, I will create a few example emails that were not included in the original dataset.
+
+These examples are only demonstrations and do not have verified real-world classifications.
+
+```{r new-emails}
+new_emails <- tibble(
+  email_id = 100001:100004,
+  text = c(
+    "Congratulations! You have won a free cash prize. Claim your reward now!",
+    "Hi, can we meet tomorrow afternoon to discuss the project?",
+    "Limited time offer! Buy now and receive a special discount!",
+    "Hello, I attached the notes from our meeting. Please review them."
+  )
+)
+
+# Clean the new emails
+new_emails <- new_emails %>%
+  mutate(clean_text = clean_text(text))
+
+# Tokenize
+new_tokens <- new_emails %>%
+  select(email_id, clean_text) %>%
+  unnest_tokens(word, clean_text) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(nchar(word) > 2)
+
+# Count words
+new_word_counts <- new_tokens %>%
+  count(email_id, word)
+
+# Create matrix using training vocabulary
+x_new <- make_dtm(
+  new_word_counts,
+  new_emails$email_id,
+  vocabulary
+)
+
+# Predict classifications
+new_predictions <- predict_nb(x_new)
+
+new_results <- new_emails %>%
+  select(text) %>%
+  mutate(Predicted_Class = new_predictions)
+
+kable(new_results)
+```
+
+This step demonstrates how a trained classification model can be used to categorize previously unseen messages.
+
+# 13. Discussion
+
+The Naive Bayes classifier achieved an accuracy of 98.83% on the testing dataset.
+
+The precision was 98.95%, meaning that this percentage of emails predicted as spam were actually spam.
+
+The recall was 94%, indicating the proportion of actual spam emails that the model successfully identified.
+
+The F1-score was 96.41%, providing a combined measure of precision and recall.
+
+The confusion matrix showed 1 false positives and 6 false negatives.
+
+These results demonstrate how a text classification model can use word frequencies to identify patterns associated with spam and ham emails.
+
+One limitation of this approach is that Naive Bayes makes simplifying assumptions about the relationships
+between words. It also relies on the vocabulary learned from the training dataset, meaning that unfamiliar
+words or new spam techniques may be difficult to classify accurately.
+
+Another limitation is that the SpamAssassin corpus contains older emails, so its vocabulary may not fully
+represent modern spam messages.
+
+# 14. Conclusion
+
+In this project, I used the Apache SpamAssassin Public Corpus to explore how machine learning can classify emails as spam or ham. I began by importing and cleaning the email text, examining word frequencies, and dividing the data into training and testing sets.
+
+I then built a Multinomial Naive Bayes classifier using word frequencies and evaluated its performance on emails that were not used during training.
+
+The model achieved an accuracy of 98.83%, showing how effectively it classified the testing emails. By
+examining precision, recall, F1-score, and the confusion matrix, I was also able to evaluate the different
+types of classification errors.
+
+This project helped me better understand how unstructured text can be transformed into numerical features and used in supervised machine learning. It also demonstrated the importance of data preprocessing, separating training and testing data, and evaluating models using multiple performance measures.
+
+In the future, I could improve this analysis by experimenting with other classification algorithms, including logistic regression or support vector machines, and comparing their performance with Naive Bayes.
+
+# References
+
+Apache SpamAssassin. Public Corpus. https://spamassassin.apache.org/old/publiccorpus/
+
+Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*. https://www.tidytextmining.com/
